@@ -401,3 +401,64 @@ def query_top_attacker_alliances(corp_id: int, date_from: str, date_to: str, lim
             (date_from, date_to, corp_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# ── 联盟分析查询 ────────────────────────────────────────
+
+
+def query_alliance_daily_stats(alliance_id: int, date_from: str, date_to: str) -> dict:
+    """联盟昨日击杀/损失汇总统计。"""
+    with get_db() as conn:
+        kills = conn.execute(
+            """
+            SELECT COUNT(DISTINCT k.killmail_id) AS count,
+                   COALESCE(SUM(k.isk_destroyed), 0) AS isk
+            FROM killmails k
+            WHERE k.killmail_time >= ? AND k.killmail_time < ?
+              AND EXISTS (
+                  SELECT 1 FROM attackers a
+                  WHERE a.killmail_id = k.killmail_id AND a.alliance_id = ?
+              )
+              AND k.npc_kill = 0
+            """,
+            (date_from, date_to, alliance_id),
+        ).fetchone()
+
+        losses = conn.execute(
+            """
+            SELECT COUNT(*) AS count,
+                   COALESCE(SUM(isk_destroyed), 0) AS isk
+            FROM killmails
+            WHERE killmail_time >= ? AND killmail_time < ?
+              AND victim_alliance_id = ?
+            """,
+            (date_from, date_to, alliance_id),
+        ).fetchone()
+
+        return {
+            "kills": {"count": kills["count"], "isk": kills["isk"]},
+            "losses": {"count": losses["count"], "isk": losses["isk"]},
+        }
+
+
+def query_alliance_active_members(alliance_id: int, date_from: str, date_to: str) -> int:
+    """联盟活跃成员数。"""
+    with get_db() as conn:
+        row = conn.execute(
+            """
+            SELECT COUNT(DISTINCT entity_id) AS count FROM (
+                SELECT a.character_id AS entity_id
+                FROM attackers a
+                JOIN killmails k ON k.killmail_id = a.killmail_id
+                WHERE a.alliance_id = ?
+                  AND k.killmail_time >= ? AND k.killmail_time < ?
+                UNION
+                SELECT k.victim_character_id
+                FROM killmails k
+                WHERE k.victim_alliance_id = ?
+                  AND k.killmail_time >= ? AND k.killmail_time < ?
+            )
+            """,
+            (alliance_id, date_from, date_to, alliance_id, date_from, date_to),
+        ).fetchone()
+        return row["count"] if row else 0

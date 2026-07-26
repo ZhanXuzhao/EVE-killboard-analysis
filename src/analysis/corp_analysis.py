@@ -24,10 +24,11 @@ def _has_data(corp_id: int, date_from: str, date_to: str) -> bool:
 
 
 class CorpDailyAnalysis:
-    """军团昨日击杀分析结果容器。"""
+    """军团/联盟昨日击杀分析结果容器。"""
 
-    def __init__(self, corp_id: int, date_from: str, date_to: str):
-        self.corp_id = corp_id
+    def __init__(self, entity_id: int, date_from: str, date_to: str, entity_type: str = "corporation"):
+        self.entity_id = entity_id
+        self.entity_type = entity_type
         self.date_from = date_from
         self.date_to = date_to
 
@@ -46,43 +47,29 @@ class CorpDailyAnalysis:
 
     def run(self):
         """执行所有分析。"""
-        self.has_data = _has_data(self.corp_id, self.date_from, self.date_to)
+        eid = self.entity_id
+        etype = self.entity_type
+
+        self.has_data = _has_data(eid, self.date_from, self.date_to)
         if not self.has_data:
             return
 
-        self.stats = repo.query_corp_daily_stats(
-            self.corp_id, self.date_from, self.date_to
-        )
-        self.top_killers = repo.query_top_killers(
-            self.corp_id, self.date_from, self.date_to
-        )
-        self.top_kill_ships = repo.query_top_kill_ships(
-            self.corp_id, self.date_from, self.date_to
-        )
-        self.top_loss_ships = repo.query_top_loss_ships(
-            self.corp_id, self.date_from, self.date_to
-        )
-        self.top_victims = repo.query_top_victims(
-            self.corp_id, self.date_from, self.date_to
-        )
-        self.hourly_timeline = repo.query_hourly_timeline(
-            self.corp_id, self.date_from, self.date_to
-        )
-        self.system_hotspots = repo.query_system_hotspots(
-            self.corp_id, self.date_from, self.date_to
-        )
-        self.region_hotspots = repo.query_region_hotspots(
-            self.corp_id, self.date_from, self.date_to
-        )
-        self.top_killed_alliances = repo.query_top_killed_alliances(
-            self.corp_id, self.date_from, self.date_to
-        )
-        self.top_attacker_alliances = repo.query_top_attacker_alliances(
-            self.corp_id, self.date_from, self.date_to
-        )
-        self.active_members = repo.query_active_members(
-            self.corp_id, self.date_from, self.date_to
-        )
+        if etype == "alliance":
+            self.stats = repo.query_alliance_daily_stats(eid, self.date_from, self.date_to)
+            self.active_members = repo.query_alliance_active_members(eid, self.date_from, self.date_to)
+        else:
+            self.stats = repo.query_corp_daily_stats(eid, self.date_from, self.date_to)
+            self.active_members = repo.query_active_members(eid, self.date_from, self.date_to)
+
+        self.top_killers = repo.query_top_killers(eid, self.date_from, self.date_to)
+        self.top_kill_ships = repo.query_top_kill_ships(eid, self.date_from, self.date_to)
+        self.top_loss_ships = repo.query_top_loss_ships(eid, self.date_from, self.date_to)
+        self.top_victims = repo.query_top_victims(eid, self.date_from, self.date_to)
+        self.hourly_timeline = repo.query_hourly_timeline(eid, self.date_from, self.date_to)
+        self.system_hotspots = repo.query_system_hotspots(eid, self.date_from, self.date_to)
+        self.region_hotspots = repo.query_region_hotspots(eid, self.date_from, self.date_to)
+        self.top_killed_alliances = repo.query_top_killed_alliances(eid, self.date_from, self.date_to)
+        self.top_attacker_alliances = repo.query_top_attacker_alliances(eid, self.date_from, self.date_to)
 
     def to_dataframes(self) -> dict[str, pd.DataFrame]:
         """将分析结果转换为 Pandas DataFrame 字典。"""
@@ -123,9 +110,9 @@ class CorpDailyAnalysis:
         return dfs
 
 
-def analyze_corp_yesterday(corp_id: int) -> CorpDailyAnalysis:
-    """便捷方法：分析军团昨日数据。"""
+def analyze_entity_yesterday(entity_id: int, entity_type: str = "corporation") -> CorpDailyAnalysis:
+    """便捷方法：分析军团/联盟昨日数据。"""
     date_from, date_to = _get_yesterday_range()
-    analysis = CorpDailyAnalysis(corp_id, date_from, date_to)
+    analysis = CorpDailyAnalysis(entity_id, date_from, date_to, entity_type)
     analysis.run()
     return analysis

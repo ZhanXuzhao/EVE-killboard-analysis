@@ -13,9 +13,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from src.storage.database import init_db
-from src.collector.zkillboard import fetch_corp_yesterday_kills, search_corporation
+from src.collector.zkillboard import fetch_entity_yesterday_kills, search_entities
 from src.storage.repository import save_killmail, has_killmail
-from src.analysis.corp_analysis import analyze_corp_yesterday
+from src.analysis.corp_analysis import analyze_entity_yesterday
 
 # ── 页面配置 ────────────────────────────────────────────
 
@@ -59,13 +59,13 @@ def render_title(corp_name: str = None):
 with st.sidebar:
     st.header("⚙️ 设置")
 
-    # 默认军团 Kuan.Dai.Shan (ID: 98626718)
-    DEFAULT_CORP_ID = "98626718"
+    # 默认联盟：Kuan.Dai.Shan (ID: 99009163)
+    DEFAULT_ENTITY_ID = "99009163"
 
     # 军团输入：支持名称或 ID
     corp_input = st.text_input(
         "军团名称 / ID",
-        value=DEFAULT_CORP_ID,
+        value=DEFAULT_ENTITY_ID,
         placeholder="例如: Goonswarm Federation 或 987654321",
         help="输入军团名称（自动搜索）或直接输入数字 ID",
     )
@@ -88,7 +88,32 @@ with st.sidebar:
         """
     )
 
+    # ── 查询历史 ────────────────────────────────────────
+
+    if "query_history" not in st.session_state:
+        st.session_state.query_history = []
+
+    if st.session_state.query_history:
+        st.divider()
+        st.markdown("**📜 查询历史**")
+        for i, h in enumerate(st.session_state.query_history):
+            label = f"{h['name']} ({h['type']})"
+            key = f"hist_{i}"
+            if st.button(label, key=key, use_container_width=True):
+                st.session_state.entity_id = h["id"]
+                st.session_state.entity_name = h["name"]
+                st.session_state.entity_type = h["type"]
+                st.session_state.data_loaded = False
+                st.session_state._last_input = str(h["id"])
+                st.session_state._history_click = True
+                st.rerun()
+
 # ── 主逻辑 ──────────────────────────────────────────────
+
+# 处理历史点击（强制走输入变化分支）
+if st.session_state.get("_history_click"):
+    st.session_state._history_click = False
+    st.session_state._last_input = None  # 触发重新解析
 
 if not corp_input or not corp_input.strip():
     st.info("👈 请在左侧输入军团名称或 ID 并点击「分析昨日击杀」")
@@ -96,14 +121,16 @@ if not corp_input or not corp_input.strip():
 
 corp_input = corp_input.strip()
 
-# ── 军团名称搜索 / ID 解析 ────────────────────────────
+# ── 军团/联盟 搜索 / ID 解析 ──────────────────────────
 
-if "corp_id" not in st.session_state:
-    st.session_state.corp_id = None
-    st.session_state.corp_name = None
+if "entity_id" not in st.session_state:
+    st.session_state.entity_id = None
+    st.session_state.entity_name = None
+    st.session_state.entity_type = None
 
-corp_id_int = st.session_state.corp_id
-corp_name_display = st.session_state.corp_name
+entity_id = st.session_state.entity_id
+entity_name = st.session_state.entity_name
+entity_type = st.session_state.entity_type
 
 # 输入变了或首次输入 → 重新解析
 _input_changed = (
@@ -112,13 +139,15 @@ _input_changed = (
 
 if _input_changed:
     st.session_state._last_input = corp_input
-    st.session_state.corp_id = None
-    st.session_state.corp_name = None
+    st.session_state.entity_id = None
+    st.session_state.entity_name = None
+    st.session_state.entity_type = None
     st.session_state.data_loaded = False
 
     if corp_input.isdigit():
-        # 纯数字 → 解析 ID 获取军团名
+        # 纯数字 → 解析 ID
         corp_id_int = int(corp_input)
+        detected_type = "corporation"
         try:
             import requests as _req
             _resp = _req.post(
@@ -129,42 +158,73 @@ if _input_changed:
             )
             _data = _resp.json()
             if isinstance(_data, list) and len(_data) > 0:
-                corp_name_display = _data[0].get("name", str(corp_id_int))
+                item = _data[0]
+                entity_name = item.get("name", str(corp_id_int))
+                cat = item.get("category", "")
+                if cat in ("alliance", "corporation"):
+                    detected_type = cat
             else:
-                corp_name_display = str(corp_id_int)
+                entity_name = str(corp_id_int)
         except Exception:
-            corp_name_display = str(corp_id_int)
-        st.session_state.corp_id = corp_id_int
-        st.session_state.corp_name = corp_name_display
+            entity_name = str(corp_id_int)
+        st.session_state.entity_id = corp_id_int
+        st.session_state.entity_name = entity_name
+        st.session_state.entity_type = detected_type
+        # 同步本地变量
+        entity_id = corp_id_int
+        entity_type = detected_type
     else:
-        # 文字 → 搜索军团
+        # 文字 → 搜索军团和联盟
         with st.spinner(f"正在搜索「{corp_input}」..."):
-            results = search_corporation(corp_input)
+            results = search_entities(corp_input)
 
-        if not results:
-            st.error(f"❌ 未找到匹配「{corp_input}」的军团，请检查名称后重试")
+        corps = results.get("corporation", [])
+        alliances = results.get("alliance", [])
+        all_options = []
+
+        if not corps and not alliances:
+            st.error(f"❌ 未找到匹配「{corp_input}」的军团或联盟")
             st.stop()
 
-        if len(results) == 1:
-            corp_id_int = results[0]["id"]
-            corp_name_display = results[0]["name"]
-            st.session_state.corp_id = corp_id_int
-            st.session_state.corp_name = corp_name_display
-            st.sidebar.success(f"✅ 已匹配: **{corp_name_display}** (ID: {corp_id_int})")
+        if alliances:
+            all_options.append(("── 联盟 ──", None, None))
+            for a in alliances:
+                all_options.append((f"{a['name']} (ID: {a['id']})", a["id"], "alliance"))
+
+        if corps:
+            all_options.append(("── 军团 ──", None, None))
+            for c in corps:
+                all_options.append((f"{c['name']} (ID: {c['id']})", c["id"], "corporation"))
+
+        # 只有一个选项（不含分隔符）
+        non_sep = [o for o in all_options if o[1] is not None]
+        if len(non_sep) == 1:
+            entity_id = non_sep[0][1]
+            entity_name = non_sep[0][0].split(" (ID:")[0]
+            entity_type = non_sep[0][2]
+            st.session_state.entity_id = entity_id
+            st.session_state.entity_name = entity_name
+            st.session_state.entity_type = entity_type
+            label = "联盟" if entity_type == "alliance" else "军团"
+            st.sidebar.success(f"✅ 已匹配 {label}: **{entity_name}**")
         else:
-            # 多个结果 → 让用户选择
-            options = {f"{r['name']} (ID: {r['id']})": r["id"] for r in results}
             selected = st.sidebar.radio(
                 "🔍 找到多个匹配，请选择:",
-                options=list(options.keys()),
+                options=[o[0] for o in all_options],
                 index=0,
             )
-            corp_id_int = options[selected]
-            corp_name_display = selected.split(" (ID:")[0]
-            st.session_state.corp_id = corp_id_int
-            st.session_state.corp_name = corp_name_display
-elif corp_id_int is None:
-    st.info("👈 请在左侧输入军团名称或 ID 并点击「分析昨日击杀」")
+            for label_t, eid, etype in all_options:
+                if label_t == selected and eid is not None:
+                    entity_id = eid
+                    entity_name = label_t.split(" (ID:")[0]
+                    entity_type = etype
+                    st.session_state.entity_id = entity_id
+                    st.session_state.entity_name = entity_name
+                    st.session_state.entity_type = entity_type
+                    break
+
+elif entity_id is None:
+    st.info("👈 请在左侧输入军团名称或 ID")
     st.stop()
 
 # 状态位
@@ -190,7 +250,7 @@ def load_data(force_refresh: bool = False):
         status_text.text(f"已处理 {current}/{total} 条")
 
     try:
-        results = fetch_corp_yesterday_kills(corp_id_int, on_progress=on_progress)
+        results = fetch_entity_yesterday_kills(entity_id, entity_type=entity_type or "corporation", on_progress=on_progress)
     except Exception as e:
         st.error(f"❌ 数据拉取失败: {e}")
         return False
@@ -231,21 +291,28 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
 
     # ── 执行分析 ──────────────────────────────────────────
 
-    display_name = corp_name_display or f"ID: {corp_id_int}"
+    display_name = entity_name or f"ID: {entity_id}"
     render_title(display_name)
 
-    # 更新浏览器标签页标题
     st.markdown(
-        f"<script>document.title = 'EVE 军团击杀日报：{display_name}';</script>",
+        f"<script>document.title = 'EVE {entity_type or '军团'}击杀日报：{display_name}';</script>",
         unsafe_allow_html=True,
     )
 
-    analysis = analyze_corp_yesterday(corp_id_int)
+    analysis = analyze_entity_yesterday(entity_id, entity_type=entity_type or "corporation")
 
     if not analysis.has_data:
         st.warning(f"😴 **{display_name}** 昨日没有击杀/损失记录，或数据尚未拉取。")
         st.info("💡 如果是首次使用，请点击「强制刷新数据」从 zKillboard 拉取。")
         st.stop()
+
+    # 记录查询历史
+    _history = st.session_state.query_history
+    _entry = {"id": entity_id, "name": display_name, "type": entity_type or "corporation"}
+    # 去重：如果已存在则删除旧记录
+    _history[:] = [h for h in _history if not (h["id"] == entity_id and h["type"] == (entity_type or "corporation"))]
+    _history.insert(0, _entry)
+    st.session_state.query_history = _history[:10]  # 最多保留 10 条
 
     dfs = analysis.to_dataframes()
     stats = analysis.stats

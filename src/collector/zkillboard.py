@@ -1,11 +1,14 @@
 """zKillboard API 客户端 — 获取并解析击杀数据。"""
 
+import json
 import logging
+from pathlib import Path
 from typing import Optional
 
 import requests
 
 from src.config import (
+    DATA_DIR,
     ZKILLBOARD_BASE_URL,
     REQUEST_TIMEOUT,
     USER_AGENT,
@@ -61,22 +64,57 @@ def _batch_resolve_ids(id_batch: list[int]) -> dict[int, str]:
     return {}
 
 
+# ── 星系→星域 本地缓存 ──────────────────────────────────
+
+_SYSTEM_REGION_CACHE: dict[int, str] = {}
+_SYSTEM_REGION_CACHE_FILE = DATA_DIR / "system_region_cache.json"
+
+
+def _load_system_region_cache():
+    """加载本地缓存。"""
+    global _SYSTEM_REGION_CACHE
+    if not _SYSTEM_REGION_CACHE and _SYSTEM_REGION_CACHE_FILE.exists():
+        try:
+            with open(_SYSTEM_REGION_CACHE_FILE, encoding="utf-8") as f:
+                _SYSTEM_REGION_CACHE = {int(k): v for k, v in json.load(f).items()}
+        except Exception:
+            _SYSTEM_REGION_CACHE = {}
+
+
+def _save_system_region_cache():
+    """保存本地缓存。"""
+    try:
+        _SYSTEM_REGION_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(_SYSTEM_REGION_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(_SYSTEM_REGION_CACHE, f, ensure_ascii=False)
+    except Exception as e:
+        logger.warning(f"保存星域缓存失败: {e}")
+
+
 def _enrich_system_regions(kills: list[dict]) -> list[dict]:
     """解析星系 ID 对应的星域名称并注入。
 
     流程：星系 → 星座(获取 region_id) → 星域(获取名称)
+    使用本地 JSON 缓存加速后续查询。
     """
-    # 收集所有唯一星系 ID
+    _load_system_region_cache()
+
+    # 收集所有唯一星系 ID（排除已缓存的）
     system_ids = set()
     for km in kills:
         sid = km.get("solar_system_id")
-        if sid:
+        if sid and sid not in _SYSTEM_REGION_CACHE:
             system_ids.add(sid)
 
-    if not system_ids:
+    if not system_ids and _SYSTEM_REGION_CACHE:
+        # 全部已缓存，直接注入
+        for km in kills:
+            sid = km.get("solar_system_id")
+            if sid in _SYSTEM_REGION_CACHE:
+                km["solar_system_region_name"] = _SYSTEM_REGION_CACHE[sid]
         return kills
 
-    system_list = sorted(system_ids)
+    system_list = sorted(system_ids) if system_ids else []
 
     # 步骤1: 获取每个星系的 constellation_id
     sys_to_const: dict[int, int] = {}  # system_id -> constellation_id
@@ -125,14 +163,21 @@ def _enrich_system_regions(kills: list[dict]) -> list[dict]:
         batch = id_list[i:i + 1000]
         region_name_map.update(_batch_resolve_ids(batch))
 
-    # 步骤4: 注入 region_name 到每个击杀
+    # 步骤4: 注入 region_name 到每个击杀（优先从缓存）
     for km in kills:
         sid = km.get("solar_system_id")
-        if sid in sys_to_const:
+        if sid in _SYSTEM_REGION_CACHE:
+            km["solar_system_region_name"] = _SYSTEM_REGION_CACHE[sid]
+        elif sid in sys_to_const:
             cid = sys_to_const[sid]
             rid = const_to_region.get(cid)
             if rid and rid in region_name_map:
-                km["solar_system_region_name"] = region_name_map[rid]
+                region_name = region_name_map[rid]
+                km["solar_system_region_name"] = region_name
+                _SYSTEM_REGION_CACHE[sid] = region_name
+
+    if sys_to_const:
+        _save_system_region_cache()
 
     return kills
 
@@ -247,17 +292,36 @@ def get_corporation_kills(
     return []
 
 
-def search_corporation(query: str, limit: int = 10) -> list[dict]:
-    """搜索军团名称，返回匹配的军团列表。
+def get_alliance_kills(
+    alliance_id: int,
+    past_seconds: int = 86400,
+    limit: int = 200,
+) -> list[dict]:
+    """获取指定联盟在最近 N 秒内的击杀数据。"""
+    path = f"allianceID/{alliance_id}/pastSeconds/{past_seconds}/"
+    data = _request(path, params={"limit": limit})
 
-    使用 zKillboard 的 autocomplete 接口，过滤出军团类型的结果。
+    if data is None:
+        return []
 
-    Args:
-        query: 军团名称关键字（建议使用短名称，如 "Goonswarm" 而非全称）
-        limit: 最大返回条数
+    if isinstance(data, list):
+        return data[:limit]
+
+    if isinstance(data, dict) and "error" in data:
+        logger.warning(f"API 返回错误: {data['error']}")
+    else:
+        logger.warning(f"意外的返回格式: {type(data)}")
+    return []
+
+
+def search_entities(query: str, limit: int = 10) -> dict:
+    """搜索军团或联盟名称，返回分类结果。
+
+    使用 zKillboard 的 autocomplete 接口，按类型分组返回。
 
     Returns:
-        [{"id": int, "name": str}, ...]
+        {"corporation": [{"id": int, "name": str}, ...],
+         "alliance":    [{"id": int, "name": str}, ...]}
     """
     url = f"https://zkillboard.com/autocomplete/{query}/"
 
@@ -267,55 +331,59 @@ def search_corporation(query: str, limit: int = 10) -> list[dict]:
         data = resp.json()
     except Exception as e:
         logger.warning(f"搜索请求失败 [{query}]: {e}")
-        return []
+        return {"corporation": [], "alliance": []}
 
     if not isinstance(data, list):
-        return []
+        return {"corporation": [], "alliance": []}
 
-    # 过滤出 corporation 类型
-    corps = [item for item in data if item.get("type") == "corporation"]
+    result = {"corporation": [], "alliance": []}
+    seen = {"corporation": set(), "alliance": set()}
 
-    # 去重（按 id）
-    seen = set()
-    unique = []
-    for c in corps:
-        cid = c.get("id")
-        if cid and cid not in seen:
-            seen.add(cid)
-            unique.append({"id": cid, "name": c.get("name", "")})
+    for item in data:
+        t = item.get("type")
+        if t not in ("corporation", "alliance"):
+            continue
+        cid = item.get("id")
+        name = item.get("name", "")
+        if cid and cid not in seen[t]:
+            seen[t].add(cid)
+            result[t].append({"id": cid, "name": name})
 
-    return unique[:limit]
+    result["corporation"] = result["corporation"][:limit]
+    result["alliance"] = result["alliance"][:limit]
+    return result
 
 
-def fetch_corp_yesterday_kills(
-    corporation_id: int,
+def fetch_entity_yesterday_kills(
+    entity_id: int,
+    entity_type: str = "corporation",
     on_progress: Optional[callable] = None,
 ) -> list[dict]:
-    """拉取军团前一天的完整击杀数据。
-
-    zKillboard 新版 API 一次请求即返回完整击杀详情，
-    （含 killmail、attackers、victim、items 等）。
+    """拉取军团或联盟前一天的完整击杀数据。
 
     Args:
-        corporation_id: 军团 ID
-        on_progress: 进度回调 (current, total) — 新版 API 一次返回，total=1
+        entity_id: ID
+        entity_type: "corporation" 或 "alliance"
+        on_progress: 进度回调
 
     Returns:
-        包含击杀详情、攻击者列表、物品列表的字典列表
+        击杀详情字典列表
     """
     if on_progress:
         on_progress(0, 1)
 
-    kills = get_corporation_kills(corporation_id, past_seconds=86400)
+    if entity_type == "alliance":
+        kills = get_alliance_kills(entity_id, past_seconds=86400)
+    else:
+        kills = get_corporation_kills(entity_id, past_seconds=86400)
 
     if not kills:
         if on_progress:
             on_progress(1, 1)
         return []
 
-    # 批量解析 ID→名称
     kills = _enrich_killmail_names(kills)
-    # 批量解析星系→星域
+    kills = _enrich_system_regions(kills)
     kills = _enrich_system_regions(kills)
 
     results = []

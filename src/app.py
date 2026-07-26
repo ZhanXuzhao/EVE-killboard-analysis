@@ -88,8 +88,8 @@ def render_title(corp_name: str = None):
 # ── 侧边栏输入 ──────────────────────────────────────────
 
 # 默认联盟：Kuan.Dai.Shan (ID: 99009163)
-DEFAULT_ENTITY_ID = "Dracarys."
-DEFAULT_ENTITY_RESOLVE = (99009163, "Dracarys.", "alliance")
+DEFAULT_ENTITY_ID = "Goonswarm Federation"
+DEFAULT_ENTITY_RESOLVE = (1354830081, "Goonswarm Federation", "alliance")
 
 with st.sidebar:
     st.header("⚙️ 设置")

@@ -855,15 +855,3 @@ if entity_id is not None:
 else:
     render_title()
     st.info("👈 请在左侧输入军团名称或 ID")
-
-# ── Debug 面板 ─────────────────────────────────────────
-
-with st.expander("🐛 Debug Log", expanded=False):
-    _logs = st.session_state.get("_debug_logs", [])
-    if _logs:
-        st.code("\n".join(_logs[-30:]), language="text")
-    else:
-        st.caption("无日志")
-    if st.button("清空日志"):
-        st.session_state._debug_logs = []
-        st.rerun()

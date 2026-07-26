@@ -316,6 +316,9 @@ def load_data(target_date, use_cache: bool = True):
 
     try:
         results = fetch_entity_yesterday_kills(entity_id, entity_type=entity_type or "corporation", on_progress=on_progress, past_seconds=past_seconds)
+    except RuntimeError as e:
+        st.error(f"❌ {e}")
+        return False
     except Exception as e:
         st.error(f"❌ 数据拉取失败: {e}")
         return False

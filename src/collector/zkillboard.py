@@ -29,14 +29,12 @@ def _request(path: str, params: Optional[dict] = None) -> Optional[dict | list]:
         resp.raise_for_status()
         return resp.json()
     except requests.RequestException as e:
-        logger.warning(f"API 请求失败 [{url}]: {e}")
-        return None
+        msg = f"zKillboard API 请求失败: {e}"
+        logger.warning(msg)
+        raise RuntimeError(msg)
 
 
 # ── ESI 名称解析 ────────────────────────────────────────
-
-_ESI_NAMES_URL = "https://esi.evetech.net/latest/universe/names/"
-
 
 def _batch_resolve_ids(id_batch: list[int]) -> dict[int, str]:
     """批量调用 ESI /universe/names/ 解析 ID→名称。
@@ -317,17 +315,13 @@ def get_corporation_kills(
     path = f"corporationID/{corporation_id}/pastSeconds/{past_seconds}/page/{page}/"
     data = _request(path)
 
-    if data is None:
-        return []
-
     if isinstance(data, list):
         return data
 
     if isinstance(data, dict) and "error" in data:
-        logger.warning(f"API 返回错误: {data['error']}")
-    else:
-        logger.warning(f"意外的返回格式: {type(data)}")
-    return []
+        raise RuntimeError(f"zKillboard API 返回错误: {data['error']}")
+
+    raise RuntimeError(f"zKillboard API 返回格式异常: {type(data)}")
 
 
 def get_alliance_kills(
@@ -339,17 +333,13 @@ def get_alliance_kills(
     path = f"allianceID/{alliance_id}/pastSeconds/{past_seconds}/page/{page}/"
     data = _request(path)
 
-    if data is None:
-        return []
-
     if isinstance(data, list):
         return data
 
     if isinstance(data, dict) and "error" in data:
-        logger.warning(f"API 返回错误: {data['error']}")
-    else:
-        logger.warning(f"意外的返回格式: {type(data)}")
-    return []
+        raise RuntimeError(f"zKillboard API 返回错误: {data['error']}")
+
+    raise RuntimeError(f"zKillboard API 返回格式异常: {type(data)}")
 
 
 def search_entities(query: str, limit: int = 10) -> dict:

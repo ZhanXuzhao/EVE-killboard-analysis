@@ -32,6 +32,8 @@ hide_streamlit_style = """
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 .stDeployButton {display:none;}
+div[data-testid="stSidebar"] button[kind="secondary"] {background: none !important; border: none !important; color: #999 !important; padding: 0 4px !important; min-width: unset !important; font-size: 0.85em !important;}
+div[data-testid="stSidebar"] button[kind="secondary"]:hover {color: #ff4444 !important;}
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
@@ -56,11 +58,12 @@ def render_title(corp_name: str = None):
 
 # ── 侧边栏输入 ──────────────────────────────────────────
 
+# 默认联盟：Kuan.Dai.Shan (ID: 99009163)
+DEFAULT_ENTITY_ID = "Dracarys."
+DEFAULT_ENTITY_RESOLVE = (99009163, "Dracarys.", "alliance")
+
 with st.sidebar:
     st.header("⚙️ 设置")
-
-    # 默认联盟：Kuan.Dai.Shan (ID: 99009163)
-    DEFAULT_ENTITY_ID = "99009163"
 
     # ── 查询历史（输入框上方） ──────────────────────────
 
@@ -78,11 +81,24 @@ with st.sidebar:
             st.session_state.query_history = []
 
     if st.session_state.query_history:
-        st.markdown("**📜 最近查询**")
-        cols = st.columns(min(4, len(st.session_state.query_history)))
-        for i, h in enumerate(st.session_state.query_history[:4]):
+        hcol1, hcol2 = st.columns([3, 1])
+        with hcol1:
+            st.markdown("**📜 最近查询**")
+        with hcol2:
+            if st.button("✕", key="clear_history", help="清空所有查询历史"):
+                st.session_state.query_history = []
+                # 同步清空本地文件
+                try:
+                    import json
+                    _hist_file = Path(__file__).resolve().parent.parent / "data" / "query_history.json"
+                    with open(_hist_file, "w", encoding="utf-8") as _f:
+                        json.dump([], _f)
+                except Exception:
+                    pass
+        cols = st.columns(min(3, max(1, len(st.session_state.query_history))))
+        for i, h in enumerate(st.session_state.query_history[:6]):
             with cols[i]:
-                label = f"{h['name']}"
+                label = f"{h.get('ticker', h['name'])}"
                 if st.button(label, key=f"hist_{i}", use_container_width=True):
                     st.session_state.entity_id = h["id"]
                     st.session_state.entity_name = h["name"]
@@ -220,34 +236,15 @@ if st.session_state.get("_history_click"):
 # 首次加载：自动处理默认数字 ID + 触发分析
 if "auto_triggered" not in st.session_state:
     st.session_state.auto_triggered = True
-    if st.session_state.entity_id is None and corp_input.strip().isdigit():
-        corp_id_int = int(corp_input.strip())
-        detected_type = "corporation"
-        try:
-            import requests as _req
-            _resp = _req.post(
-                "https://esi.evetech.net/latest/universe/names/",
-                json=[corp_id_int],
-                headers={"User-Agent": "EVE-Killboard-Analysis/1.0"},
-                timeout=10,
-            )
-            _data = _resp.json()
-            if isinstance(_data, list) and len(_data) > 0:
-                item = _data[0]
-                st.session_state.entity_name = item.get("name", str(corp_id_int))
-                cat = item.get("category", "")
-                if cat in ("alliance", "corporation"):
-                    detected_type = cat
-            else:
-                st.session_state.entity_name = str(corp_id_int)
-        except Exception:
-            st.session_state.entity_name = str(corp_id_int)
-        st.session_state.entity_id = corp_id_int
-        st.session_state.entity_type = detected_type
+    if st.session_state.entity_id is None:
+        _did, _dname, _dtype = DEFAULT_ENTITY_RESOLVE
+        st.session_state.entity_id = _did
+        st.session_state.entity_name = _dname
+        st.session_state.entity_type = _dtype
+        st.session_state._last_input = DEFAULT_ENTITY_ID
     if st.session_state.entity_id is not None:
         analyze_btn = True
 
-# 从 session_state 同步当前实体
 entity_id = st.session_state.entity_id
 entity_name = st.session_state.entity_name
 entity_type = st.session_state.entity_type
@@ -334,8 +331,27 @@ if analyze_btn or st.session_state.data_loaded:
         st.stop()
 
     # 记录查询历史
+    # 解析 ticker
+    _ticker = st.session_state.get("_ticker_cache", {}).get(entity_id)
+    if not _ticker:
+        try:
+            import requests as _req
+            if (entity_type or "corporation") == "alliance":
+                _resp = _req.get(f"https://esi.evetech.net/latest/alliances/{entity_id}/",
+                                 headers={"User-Agent": "EVE-Killboard-Analysis/1.0"}, timeout=10)
+            else:
+                _resp = _req.get(f"https://esi.evetech.net/latest/corporations/{entity_id}/",
+                                 headers={"User-Agent": "EVE-Killboard-Analysis/1.0"}, timeout=10)
+            _ticker = _resp.json().get("ticker", "")
+        except Exception:
+            _ticker = ""
+        # 缓存 ticker
+        _tc = st.session_state.get("_ticker_cache", {})
+        _tc[entity_id] = _ticker
+        st.session_state._ticker_cache = _tc
+
     _history = st.session_state.query_history
-    _entry = {"id": entity_id, "name": display_name, "type": entity_type or "corporation"}
+    _entry = {"id": entity_id, "name": display_name, "type": entity_type or "corporation", "ticker": _ticker}
     # 去重：如果已存在则删除旧记录
     _history[:] = [h for h in _history if not (h["id"] == entity_id and h["type"] == (entity_type or "corporation"))]
     _history.insert(0, _entry)

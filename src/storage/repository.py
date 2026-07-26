@@ -269,25 +269,48 @@ def query_top_kill_ships(entity_id: int, date_from: str, date_to: str, limit: in
 
 
 def query_hourly_timeline(entity_id: int, date_from: str, date_to: str, entity_type: str = "corporation") -> list[dict]:
-    """24 小时击杀时间分布。"""
+    """24 小时击杀+损失时间分布。"""
     id_col = _id_col(entity_type)
+    victim_col = _victim_col(entity_type)
     with get_db() as conn:
         rows = conn.execute(
             f"""
-            SELECT CAST(STRFTIME('%H', k.killmail_time) AS INTEGER) AS hour,
-                   COUNT(DISTINCT k.killmail_id) AS kills,
-                   COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
-            FROM killmails k
-            WHERE k.killmail_time >= ? AND k.killmail_time < ?
-              AND EXISTS (
-                  SELECT 1 FROM attackers a
-                  WHERE a.killmail_id = k.killmail_id AND a.{id_col} = ?
-              )
-              AND k.npc_kill = 0
-            GROUP BY hour
-            ORDER BY hour
+            WITH RECURSIVE hours(h) AS (
+                SELECT 0 UNION ALL SELECT h+1 FROM hours WHERE h < 23
+            ),
+            kills AS (
+                SELECT CAST(STRFTIME('%H', k.killmail_time) AS INTEGER) AS hour,
+                       COUNT(DISTINCT k.killmail_id) AS kills,
+                       COALESCE(SUM(k.isk_destroyed), 0) AS kill_isk
+                FROM killmails k
+                WHERE k.killmail_time >= ? AND k.killmail_time < ?
+                  AND EXISTS (
+                      SELECT 1 FROM attackers a
+                      WHERE a.killmail_id = k.killmail_id AND a.{id_col} = ?
+                  )
+                  AND k.npc_kill = 0
+                GROUP BY hour
+            ),
+            losses AS (
+                SELECT CAST(STRFTIME('%H', k.killmail_time) AS INTEGER) AS hour,
+                       COUNT(*) AS losses,
+                       COALESCE(SUM(k.isk_destroyed), 0) AS loss_isk
+                FROM killmails k
+                WHERE k.killmail_time >= ? AND k.killmail_time < ?
+                  AND k.{victim_col} = ?
+                GROUP BY hour
+            )
+            SELECT h.h AS hour,
+                   COALESCE(k.kills, 0) AS kills,
+                   COALESCE(k.kill_isk, 0) AS kill_isk,
+                   COALESCE(l.losses, 0) AS losses,
+                   COALESCE(l.loss_isk, 0) AS loss_isk
+            FROM hours h
+            LEFT JOIN kills k ON h.h = k.hour
+            LEFT JOIN losses l ON h.h = l.hour
+            ORDER BY h.h
             """,
-            (date_from, date_to, entity_id),
+            (date_from, date_to, entity_id, date_from, date_to, entity_id),
         ).fetchall()
         return [dict(r) for r in rows]
 

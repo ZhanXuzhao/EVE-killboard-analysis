@@ -362,20 +362,42 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
 
     # ── Row 1: 击杀时间分布 ────────────────────────────
 
-    st.subheader("📈 击杀时间分布")
+    st.subheader("📈 击杀损失分布")
     if "hourly_timeline" in dfs:
         df = dfs["hourly_timeline"].copy()
-        df["isk_label"] = df["total_isk"].apply(_fmt)
-        fig = px.bar(
-            df,
-            x="hour",
-            y="kills",
-            labels={"hour": "小时 (UTC)", "kills": "击杀数"},
-            color="total_isk",
-            color_continuous_scale="Reds",
-            hover_data={"total_isk": False, "isk_label": True},
+        df["kill_isk_label"] = df["kill_isk"].apply(_fmt)
+        df["loss_isk_label"] = df["loss_isk"].apply(_fmt)
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=df["hour"], y=df["kills"],
+            name="击杀",
+            marker=dict(
+                color=df["kill_isk"],
+                colorscale="Greens",
+                showscale=False,
+            ),
+            hovertemplate="小时 %{x}:00<br>击杀: %{y}<br>ISK: %{customdata[0]}<extra></extra>",
+            customdata=df[["kill_isk_label"]].values,
+        ))
+        fig.add_trace(go.Bar(
+            x=df["hour"], y=df["losses"],
+            name="损失",
+            marker=dict(
+                color=df["loss_isk"],
+                colorscale="Reds",
+                showscale=False,
+            ),
+            hovertemplate="小时 %{x}:00<br>损失: %{y}<br>ISK: %{customdata[0]}<extra></extra>",
+            customdata=df[["loss_isk_label"]].values,
+        ))
+        fig.update_layout(
+            barmode="group",
+            height=300,
+            margin=dict(l=20, r=20, t=20, b=20),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+            xaxis_title="小时 (UTC)",
+            yaxis_title="数量",
         )
-        fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
         fig.update_xaxes(dtick=2)
         st.plotly_chart(fig, width="stretch")
     else:

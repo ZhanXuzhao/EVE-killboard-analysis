@@ -92,10 +92,8 @@ class CorpDailyAnalysis:
 
         if self.hourly_timeline:
             df = pd.DataFrame(self.hourly_timeline)
-            # 补全缺失的小时
-            all_hours = pd.DataFrame({"hour": range(24)})
-            df = all_hours.merge(df, on="hour", how="left").fillna(0)
             df["kills"] = df["kills"].astype(int)
+            df["losses"] = df["losses"].astype(int)
             dfs["hourly_timeline"] = df
 
         if self.system_hotspots:

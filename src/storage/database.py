@@ -89,6 +89,17 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_attacker_corp ON attackers(corporation_id);
             CREATE INDEX IF NOT EXISTS idx_attacker_km   ON attackers(killmail_id);
             CREATE INDEX IF NOT EXISTS idx_items_km      ON items(killmail_id);
+
+            CREATE TABLE IF NOT EXISTS fetch_log (
+                entity_id      INTEGER NOT NULL,
+                entity_type    TEXT NOT NULL,
+                date_from      TEXT NOT NULL,
+                date_to        TEXT NOT NULL,
+                fetched_at     TEXT NOT NULL DEFAULT (datetime('now')),
+                killmail_count INTEGER DEFAULT 0,
+                complete       INTEGER DEFAULT 0,
+                PRIMARY KEY (entity_id, entity_type, date_from, date_to)
+            );
         """)
 
         # 兼容旧数据库：新增列

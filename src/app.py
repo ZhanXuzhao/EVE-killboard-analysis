@@ -15,9 +15,9 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta, timezone
 
 from src.storage.database import init_db
-from src.collector.zkillboard import fetch_entity_yesterday_kills, search_entities
-from src.storage.repository import save_killmail, has_killmail
-from src.analysis.corp_analysis import analyze_entity_yesterday, _get_date_range, _has_data
+from src.collector.zkillboard import fetch_entity_kills_by_range, search_entities
+from src.storage.repository import save_killmail, has_killmail, is_cache_valid, upsert_fetch_log
+from src.analysis.corp_analysis import analyze_entity_yesterday, _get_date_range
 
 
 def _save_history(entity_id, entity_name, entity_type, ticker=""):
@@ -293,13 +293,11 @@ with st.sidebar:
 3. 选择**日报**或**周报**模式，并选择要分析的**日期**
 4. 点击「📊 分析」按钮
 5. **最近查询**按钮可直接跳转到历史记录
-6. **使用缓存**勾选时跳过 API 请求，直接使用本地已有数据
-7. ⚠️ zKillboard API 最多支持查询 **7 天以内** 的数据
+6. ⚠️ zKillboard API 最多支持查询 **7 天以内** 的数据
         """
     )
 
-    use_cache = st.checkbox("📦 使用缓存", value=True,
-                            help="勾选时相同查询直接从本地数据库读取，不请求网络")
+
 
 # ── 主逻辑 ──────────────────────────────────────────────
 
@@ -353,27 +351,23 @@ def _step_timer(status, step_num: int, total: int, label: str):
     return _step()
 
 
-def load_data(date_from, date_to, status, use_cache: bool = True):
-    """拉取并存储指定日期范围的数据。"""
+def load_data(date_from, date_to, status):
+    """拉取并存储指定日期范围的数据，返回是否成功。"""
     total = 6
+    etype = entity_type or "corporation"
 
     # 步骤 1: 检查缓存
     with _step_timer(status, 1, total, "检查本地缓存"):
-        if use_cache:
-            if _has_data(entity_id, date_from, date_to, entity_type=entity_type or "corporation"):
-                status.write("📦 本地已有缓存数据，跳过 API 请求")
-                status.update(label="✅ 数据加载完成（使用缓存）", state="complete")
-                return True
+        if is_cache_valid(entity_id, etype, date_from, date_to):
+            status.write("📦 本地数据有效，跳过 API 请求")
+            status.update(label="✅ 数据加载完成（缓存有效）", state="complete")
+            return True
 
-        today = datetime.now(timezone.utc).date()
-        range_end = datetime.fromisoformat(date_to).date()
-        days_ago = (today - range_end).days + 1
-        past_seconds = max(86400, (days_ago + 1) * 86400)
-
-        if past_seconds > 604800:
-            status.write("❌ zKillboard API 最多只能查询最近 7 天的数据")
-            status.update(label="❌ 数据加载失败", state="error")
-            return False
+    # 计算 Unix 时间戳
+    start_dt = datetime.fromisoformat(date_from)
+    end_dt = datetime.fromisoformat(date_to)
+    start_ts = int(start_dt.timestamp())
+    end_ts = int(end_dt.timestamp())
 
     # 步骤 2: 拉取击杀列表
     with _step_timer(status, 2, total, "从 zKillboard 拉取击杀列表"):
@@ -381,13 +375,13 @@ def load_data(date_from, date_to, status, use_cache: bool = True):
             if items_in_page > 0:
                 status.write(f"   ↳ 第 {page} 页（{items_in_page} 条）")
         try:
-            results = fetch_entity_yesterday_kills(
-                entity_id, entity_type=entity_type or "corporation",
-                on_progress=on_progress, past_seconds=past_seconds
+            results, complete = fetch_entity_kills_by_range(
+                entity_id, etype,
+                start_time=start_ts, end_time=end_ts,
+                on_progress=on_progress,
             )
         except RuntimeError as e:
-            err_msg = str(e)
-            status.write(f"❌ {'zKillboard 限制最多查 7 天' if 'pastSeconds' in err_msg else err_msg}")
+            status.write(f"❌ 数据拉取失败: {e}")
             status.update(label="❌ 数据拉取失败", state="error")
             return False
         except Exception as e:
@@ -396,6 +390,7 @@ def load_data(date_from, date_to, status, use_cache: bool = True):
             return False
 
     if not results:
+        upsert_fetch_log(entity_id, etype, date_from, date_to, 0, True)
         status.write("   ↳ 无数据")
         status.update(label="⚠️ 该时段无击杀记录", state="complete")
         return True
@@ -418,6 +413,10 @@ def load_data(date_from, date_to, status, use_cache: bool = True):
                 saved += 1
         status.write(f"   ↳ 新增 {saved} 条, 跳过 {skipped} 条重复")
 
+    # 写入 fetch log
+    upsert_fetch_log(entity_id, etype, date_from, date_to, saved + skipped, complete)
+    status.write(f"   ↳ 拉取{'完整' if complete else '不完整（可能还有下一页）'}")
+
     # 步骤 6: 名称重试（在分析阶段执行）
     with _step_timer(status, 6, total, "ESI 名称重试回填"):
         pass
@@ -436,7 +435,7 @@ _report_label = "周报" if report_type == "weekly" else "日报"
 if entity_id is not None:
     if not st.session_state.data_loaded and entity_id is not None:
         status = st.status("🚀 正在拉取并分析数据 ...", expanded=True, state="running")
-        ok = load_data(_date_from, _date_to, status, use_cache=use_cache)
+        ok = load_data(_date_from, _date_to, status)
         if not ok:
             status.update(label="❌ 数据加载失败", state="error")
             st.stop()
@@ -504,7 +503,7 @@ if entity_id is not None:
 
     if not analysis.has_data:
         st.warning(f"😴 **{display_name}** 该时段没有击杀/损失记录，或数据尚未拉取。")
-        st.info("💡 取消勾选「使用缓存」可强制从 zKillboard 拉取。")
+        st.info("💡 可切换到其他日期重新拉取数据。")
         st.stop()
 
     dfs = analysis.to_dataframes()

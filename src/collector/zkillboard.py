@@ -297,22 +297,24 @@ def _enrich_killmail_names(kills: list[dict]) -> list[dict]:
 
 def get_corporation_kills(
     corporation_id: int,
-    past_seconds: int = 86400,
+    start_time: int,
+    end_time: int,
     page: int = 1,
 ) -> list[dict]:
-    """获取指定军团在最近 N 秒内的一页击杀数据。
+    """获取指定军团在指定时间范围内的一页击杀数据。
 
     zKillboard API 每页最多返回 200 条，通过 page 路径参数翻页。
 
     Args:
         corporation_id: 军团 ID
-        past_seconds: 回溯秒数，默认 86400（1 天）
+        start_time: 开始时间（Unix 时间戳）
+        end_time: 结束时间（Unix 时间戳）
         page: 页码，从 1 开始
 
     Returns:
         击杀详情字典列表
     """
-    path = f"corporationID/{corporation_id}/pastSeconds/{past_seconds}/page/{page}/"
+    path = f"corporationID/{corporation_id}/startTime/{start_time}/endTime/{end_time}/page/{page}/"
     data = _request(path)
 
     if isinstance(data, list):
@@ -326,11 +328,12 @@ def get_corporation_kills(
 
 def get_alliance_kills(
     alliance_id: int,
-    past_seconds: int = 86400,
+    start_time: int,
+    end_time: int,
     page: int = 1,
 ) -> list[dict]:
-    """获取指定联盟在最近 N 秒内的一页击杀数据。"""
-    path = f"allianceID/{alliance_id}/pastSeconds/{past_seconds}/page/{page}/"
+    """获取指定联盟在指定时间范围内的一页击杀数据。"""
+    path = f"allianceID/{alliance_id}/startTime/{start_time}/endTime/{end_time}/page/{page}/"
     data = _request(path)
 
     if isinstance(data, list):
@@ -382,37 +385,46 @@ def search_entities(query: str, limit: int = 10) -> dict:
     return result
 
 
-def fetch_entity_yesterday_kills(
+def fetch_entity_kills_by_range(
     entity_id: int,
-    entity_type: str = "corporation",
+    entity_type: str,
+    start_time: int,
+    end_time: int,
     on_progress: Optional[callable] = None,
-    past_seconds: int = 86400,
-) -> list[dict]:
-    """拉取军团或联盟在指定时间范围内的击杀数据（自动翻页）。
+) -> tuple[list[dict], bool]:
+    """拉取军团/联盟在指定时间戳范围内的击杀数据（自动翻页），返回数据和完整性标志。
 
     zKillboard 每页最多 200 条，自动逐页拉取直到无数据。
+    如果最后一页不足 200 条，标记为 complete=True，否则为 False。
 
     Args:
         entity_id: ID
         entity_type: "corporation" 或 "alliance"
-        on_progress: 进度回调 (page, total)
-        past_seconds: 回溯秒数，默认 86400（1 天）
+        start_time: 开始时间（Unix 时间戳）
+        end_time: 结束时间（Unix 时间戳）
+        on_progress: 进度回调 (page, items_in_page)
 
     Returns:
-        击杀详情字典列表
+        (results, complete) — results 为击杀详情列表，complete 表示是否拉完整
     """
     get_fn = get_alliance_kills if entity_type == "alliance" else get_corporation_kills
 
     all_kills = []
     page = 1
+    complete = True
     while True:
-        kills = get_fn(entity_id, past_seconds=past_seconds, page=page)
+        try:
+            kills = get_fn(entity_id, start_time=start_time, end_time=end_time, page=page)
+        except RuntimeError:
+            complete = False
+            break
+
         if not kills:
             break
 
         all_kills.extend(kills)
         if on_progress:
-            on_progress(page, len(kills))  # 显示当前页和本页条数
+            on_progress(page, len(kills))
 
         if len(kills) < 200:
             break  # 不足 200 说明是最后一页
@@ -421,7 +433,7 @@ def fetch_entity_yesterday_kills(
     if not all_kills:
         if on_progress:
             on_progress(1, 0)
-        return []
+        return [], complete
 
     if on_progress:
         on_progress(page, 0)
@@ -446,5 +458,5 @@ def fetch_entity_yesterday_kills(
     if on_progress:
         on_progress(1, 1)
 
-    logger.info(f"拉取完成: 获取 {len(results)} 条击杀数据")
-    return results
+    logger.info(f"拉取完成: 获取 {len(results)} 条击杀数据, complete={complete}")
+    return results, complete

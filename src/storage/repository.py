@@ -643,6 +643,64 @@ def retry_null_names():
     return _updated
 
 
+# ── Fetch log（API 拉取记录） ──────────────────────────
+
+
+def get_fetch_log(entity_id: int, entity_type: str, date_from: str, date_to: str) -> Optional[dict]:
+    """查询指定范围的数据拉取记录，没有则返回 None。"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM fetch_log WHERE entity_id=? AND entity_type=? AND date_from=? AND date_to=?",
+            (entity_id, entity_type, date_from, date_to),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def upsert_fetch_log(entity_id: int, entity_type: str, date_from: str, date_to: str,
+                     killmail_count: int, complete: bool):
+    """写入/更新拉取记录。"""
+    with get_db() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO fetch_log
+               (entity_id, entity_type, date_from, date_to, fetched_at, killmail_count, complete)
+               VALUES (?, ?, ?, ?, datetime('now'), ?, ?)""",
+            (entity_id, entity_type, date_from, date_to, killmail_count, 1 if complete else 0),
+        )
+
+
+def is_cache_valid(entity_id: int, entity_type: str, date_from: str, date_to: str) -> bool:
+    """判断数据库中的缓存数据是否仍然有效。
+
+    规则：
+      - 今天数据：5 分钟内有效
+      - 昨天数据：12 小时内有效
+      - 前天及更早：永久有效
+      - 不完整的数据：无效（触发重拉）
+    """
+    from datetime import datetime
+
+    log = get_fetch_log(entity_id, entity_type, date_from, date_to)
+    if not log:
+        return False
+    if not log["complete"]:
+        return False
+
+    now = datetime.utcnow()
+    date_from_dt = datetime.fromisoformat(date_from)
+    days_ago = (now.date() - date_from_dt.date()).days
+
+    if days_ago <= 0:
+        # 今天
+        fetched = datetime.fromisoformat(log["fetched_at"])
+        return (now - fetched).total_seconds() < 300  # 5 分钟
+    elif days_ago == 1:
+        # 昨天
+        fetched = datetime.fromisoformat(log["fetched_at"])
+        return (now - fetched).total_seconds() < 43200  # 12 小时
+    # 前天及更早 — 永久有效
+    return True
+
+
 def query_joint_kills_alliances(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """联合击杀 — 统计哪些联盟与本方合作击杀了目标。
 

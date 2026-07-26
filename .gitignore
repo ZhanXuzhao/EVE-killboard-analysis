@@ -23,6 +23,7 @@ env/
 data/*.db
 data/*.db-wal
 data/*.db-shm
+data/query_history.json
 
 # ── 临时文件 ────────────────────────────────────────────
 *.log

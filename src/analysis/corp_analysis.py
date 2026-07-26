@@ -39,6 +39,8 @@ class CorpDailyAnalysis:
         self.hourly_timeline = []
         self.system_hotspots = []
         self.region_hotspots = []
+        self.top_killed_alliances = []
+        self.top_attacker_alliances = []
         self.active_members = 0
         self.has_data = False
 
@@ -70,6 +72,12 @@ class CorpDailyAnalysis:
             self.corp_id, self.date_from, self.date_to
         )
         self.region_hotspots = repo.query_region_hotspots(
+            self.corp_id, self.date_from, self.date_to
+        )
+        self.top_killed_alliances = repo.query_top_killed_alliances(
+            self.corp_id, self.date_from, self.date_to
+        )
+        self.top_attacker_alliances = repo.query_top_attacker_alliances(
             self.corp_id, self.date_from, self.date_to
         )
         self.active_members = repo.query_active_members(
@@ -105,6 +113,12 @@ class CorpDailyAnalysis:
 
         if self.region_hotspots:
             dfs["region_hotspots"] = pd.DataFrame(self.region_hotspots)
+
+        if self.top_killed_alliances:
+            dfs["top_killed_alliances"] = pd.DataFrame(self.top_killed_alliances)
+
+        if self.top_attacker_alliances:
+            dfs["top_attacker_alliances"] = pd.DataFrame(self.top_attacker_alliances)
 
         return dfs
 

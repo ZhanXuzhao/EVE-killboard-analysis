@@ -351,3 +351,53 @@ def query_region_hotspots(corp_id: int, date_from: str, date_to: str, limit: int
             (date_from, date_to, corp_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def query_top_killed_alliances(corp_id: int, date_from: str, date_to: str, limit: int = 10) -> list[dict]:
+    """杀的最多的联盟 — 本方击杀的受害者所属联盟排行。"""
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT k.victim_alliance_name,
+                   COUNT(DISTINCT k.killmail_id) AS kills,
+                   COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
+            FROM killmails k
+            WHERE k.killmail_time >= ? AND k.killmail_time < ?
+              AND EXISTS (
+                  SELECT 1 FROM attackers a
+                  WHERE a.killmail_id = k.killmail_id AND a.corporation_id = ?
+              )
+              AND k.npc_kill = 0
+              AND k.victim_alliance_name IS NOT NULL
+              AND k.victim_alliance_name != ''
+            GROUP BY k.victim_alliance_name
+            ORDER BY kills DESC
+            LIMIT ?
+            """,
+            (date_from, date_to, corp_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def query_top_attacker_alliances(corp_id: int, date_from: str, date_to: str, limit: int = 10) -> list[dict]:
+    """杀我们最多的联盟 — 击杀本方成员的攻击者所属联盟排行。"""
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT a.alliance_name,
+                   COUNT(DISTINCT a.killmail_id) AS kills,
+                   COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
+            FROM attackers a
+            JOIN killmails k ON k.killmail_id = a.killmail_id
+            WHERE k.killmail_time >= ? AND k.killmail_time < ?
+              AND k.victim_corporation_id = ?
+              AND a.alliance_name IS NOT NULL
+              AND a.alliance_name != ''
+              AND (a.character_id IS NOT NULL)
+            GROUP BY a.alliance_name
+            ORDER BY kills DESC
+            LIMIT ?
+            """,
+            (date_from, date_to, corp_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]

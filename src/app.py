@@ -408,7 +408,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("🌍 星域热区 Top 10")
+        st.subheader("🌍 星域 Top 10")
         if "region_hotspots" in dfs:
             df = dfs["region_hotspots"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -430,7 +430,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
             st.info("暂无星域数据")
 
     with col2:
-        st.subheader("🗺️ 星系热区 Top 10")
+        st.subheader("🗺️ 星系 Top 10")
         if "system_hotspots" in dfs:
             df = dfs["system_hotspots"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -460,7 +460,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("⚔️ 击杀最多的联盟")
+        st.subheader("⚔️ 击杀联盟 Top 10")
         if "top_killed_alliances" in dfs:
             df = dfs["top_killed_alliances"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -485,7 +485,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
             st.info("暂无数据")
 
     with col2:
-        st.subheader("🛡️ 击杀我们最多的联盟")
+        st.subheader("🛡️ 被杀联盟 Top 10")
         if "top_attacker_alliances" in dfs:
             df = dfs["top_attacker_alliances"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)

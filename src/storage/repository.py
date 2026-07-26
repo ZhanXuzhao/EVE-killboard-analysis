@@ -127,6 +127,37 @@ def get_corporation_killmail_ids(corp_id: int, date_from: str, date_to: str) -> 
         return [r["killmail_id"] for r in rows]
 
 
+def get_alliance_killmail_ids(alliance_id: int, date_from: str, date_to: str) -> list[int]:
+    """获取指定联盟在时间范围内的击杀 ID 列表。"""
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT k.killmail_id FROM killmails k
+            WHERE k.killmail_time >= ? AND k.killmail_time < ?
+              AND (
+                  k.victim_alliance_id = ?
+                  OR EXISTS (
+                      SELECT 1 FROM attackers a
+                      WHERE a.killmail_id = k.killmail_id AND a.alliance_id = ?
+                  )
+              )
+            ORDER BY k.killmail_time DESC
+            """,
+            (date_from, date_to, alliance_id, alliance_id),
+        ).fetchall()
+        return [r["killmail_id"] for r in rows]
+
+
+def _id_col(entity_type: str) -> str:
+    """根据实体类型返回 SQL 中的攻击者 ID 列名。"""
+    return "alliance_id" if entity_type == "alliance" else "corporation_id"
+
+
+def _victim_col(entity_type: str) -> str:
+    """根据实体类型返回 SQL 中的受害者 ID 列名。"""
+    return "victim_alliance_id" if entity_type == "alliance" else "victim_corporation_id"
+
+
 # ── 分析查询 ────────────────────────────────────────────
 
 
@@ -167,18 +198,19 @@ def query_corp_daily_stats(corp_id: int, date_from: str, date_to: str) -> dict:
         }
 
 
-def query_top_killers(corp_id: int, date_from: str, date_to: str, limit: int = 10) -> list[dict]:
+def query_top_killers(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """击杀排行 — 本方成员击杀数排行。"""
+    id_col = _id_col(entity_type)
     with get_db() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT a.character_id, a.character_name,
                    a.ship_name,
                    COUNT(DISTINCT a.killmail_id) AS kills,
                    COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
             FROM attackers a
             JOIN killmails k ON k.killmail_id = a.killmail_id
-            WHERE a.corporation_id = ?
+            WHERE a.{id_col} = ?
               AND k.killmail_time >= ? AND k.killmail_time < ?
               AND a.final_blow = 1
               AND k.npc_kill = 0
@@ -186,42 +218,44 @@ def query_top_killers(corp_id: int, date_from: str, date_to: str, limit: int = 1
             ORDER BY kills DESC
             LIMIT ?
             """,
-            (corp_id, date_from, date_to, limit),
+            (entity_id, date_from, date_to, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def query_top_loss_ships(corp_id: int, date_from: str, date_to: str, limit: int = 10) -> list[dict]:
+def query_top_loss_ships(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """被击毁舰船排行 — 本方损失最多的船型。"""
+    victim_col = _victim_col(entity_type)
     with get_db() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT victim_ship_name, victim_ship_type_id,
                    COUNT(*) AS count,
                    COALESCE(SUM(isk_destroyed), 0) AS total_isk
             FROM killmails
-            WHERE victim_corporation_id = ?
+            WHERE {victim_col} = ?
               AND killmail_time >= ? AND killmail_time < ?
             GROUP BY victim_ship_type_id
             ORDER BY count DESC
             LIMIT ?
             """,
-            (corp_id, date_from, date_to, limit),
+            (entity_id, date_from, date_to, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def query_top_kill_ships(corp_id: int, date_from: str, date_to: str, limit: int = 10) -> list[dict]:
+def query_top_kill_ships(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """击杀使用舰船排行 — 本方击杀时使用的船型。"""
+    id_col = _id_col(entity_type)
     with get_db() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT a.ship_name, a.ship_type_id,
                    COUNT(DISTINCT a.killmail_id) AS count,
                    COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
             FROM attackers a
             JOIN killmails k ON k.killmail_id = a.killmail_id
-            WHERE a.corporation_id = ?
+            WHERE a.{id_col} = ?
               AND k.killmail_time >= ? AND k.killmail_time < ?
               AND a.final_blow = 1
               AND k.npc_kill = 0
@@ -229,38 +263,40 @@ def query_top_kill_ships(corp_id: int, date_from: str, date_to: str, limit: int 
             ORDER BY count DESC
             LIMIT ?
             """,
-            (corp_id, date_from, date_to, limit),
+            (entity_id, date_from, date_to, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def query_hourly_timeline(corp_id: int, date_from: str, date_to: str) -> list[dict]:
+def query_hourly_timeline(entity_id: int, date_from: str, date_to: str, entity_type: str = "corporation") -> list[dict]:
     """24 小时击杀时间分布。"""
+    id_col = _id_col(entity_type)
     with get_db() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT CAST(STRFTIME('%H', k.killmail_time) AS INTEGER) AS hour,
                    COUNT(DISTINCT k.killmail_id) AS kills
             FROM killmails k
             WHERE k.killmail_time >= ? AND k.killmail_time < ?
               AND EXISTS (
                   SELECT 1 FROM attackers a
-                  WHERE a.killmail_id = k.killmail_id AND a.corporation_id = ?
+                  WHERE a.killmail_id = k.killmail_id AND a.{id_col} = ?
               )
               AND k.npc_kill = 0
             GROUP BY hour
             ORDER BY hour
             """,
-            (date_from, date_to, corp_id),
+            (date_from, date_to, entity_id),
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def query_system_hotspots(corp_id: int, date_from: str, date_to: str, limit: int = 10) -> list[dict]:
+def query_system_hotspots(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """星系热区 — 击杀发生最多的星系。"""
+    id_col = _id_col(entity_type)
     with get_db() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT k.solar_system_id, k.solar_system_name,
                    COUNT(DISTINCT k.killmail_id) AS kills,
                    COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
@@ -268,46 +304,49 @@ def query_system_hotspots(corp_id: int, date_from: str, date_to: str, limit: int
             WHERE k.killmail_time >= ? AND k.killmail_time < ?
               AND EXISTS (
                   SELECT 1 FROM attackers a
-                  WHERE a.killmail_id = k.killmail_id AND a.corporation_id = ?
+                  WHERE a.killmail_id = k.killmail_id AND a.{id_col} = ?
               )
               AND k.npc_kill = 0
             GROUP BY k.solar_system_id
             ORDER BY kills DESC
             LIMIT ?
             """,
-            (date_from, date_to, corp_id, limit),
+            (date_from, date_to, entity_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def query_active_members(corp_id: int, date_from: str, date_to: str) -> int:
+def query_active_members(entity_id: int, date_from: str, date_to: str, entity_type: str = "corporation") -> int:
     """活跃成员数（有击杀或损失记录的成员）。"""
+    id_col = _id_col(entity_type)
+    victim_col = _victim_col(entity_type)
     with get_db() as conn:
         row = conn.execute(
-            """
+            f"""
             SELECT COUNT(DISTINCT entity_id) AS count FROM (
                 SELECT a.character_id AS entity_id
                 FROM attackers a
                 JOIN killmails k ON k.killmail_id = a.killmail_id
-                WHERE a.corporation_id = ?
+                WHERE a.{id_col} = ?
                   AND k.killmail_time >= ? AND k.killmail_time < ?
                 UNION
                 SELECT k.victim_character_id
                 FROM killmails k
-                WHERE k.victim_corporation_id = ?
+                WHERE k.{victim_col} = ?
                   AND k.killmail_time >= ? AND k.killmail_time < ?
             )
             """,
-            (corp_id, date_from, date_to, corp_id, date_from, date_to),
+            (entity_id, date_from, date_to, entity_id, date_from, date_to),
         ).fetchone()
         return row["count"] if row else 0
 
 
-def query_top_victims(corp_id: int, date_from: str, date_to: str, limit: int = 10) -> list[dict]:
+def query_top_victims(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """受害者排行 — 被本方击杀最多的角色。"""
+    id_col = _id_col(entity_type)
     with get_db() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT k.victim_character_id, k.victim_character_name,
                    k.victim_corporation_name, k.victim_alliance_name,
                    COUNT(*) AS count,
@@ -316,23 +355,24 @@ def query_top_victims(corp_id: int, date_from: str, date_to: str, limit: int = 1
             WHERE k.killmail_time >= ? AND k.killmail_time < ?
               AND EXISTS (
                   SELECT 1 FROM attackers a
-                  WHERE a.killmail_id = k.killmail_id AND a.corporation_id = ?
+                  WHERE a.killmail_id = k.killmail_id AND a.{id_col} = ?
               )
               AND k.npc_kill = 0
             GROUP BY k.victim_character_id
             ORDER BY count DESC
             LIMIT ?
             """,
-            (date_from, date_to, corp_id, limit),
+            (date_from, date_to, entity_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def query_region_hotspots(corp_id: int, date_from: str, date_to: str, limit: int = 10) -> list[dict]:
+def query_region_hotspots(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """星域热区 — 击杀发生最多的星域。"""
+    id_col = _id_col(entity_type)
     with get_db() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT k.solar_system_region_name,
                    COUNT(DISTINCT k.killmail_id) AS kills,
                    COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
@@ -340,7 +380,7 @@ def query_region_hotspots(corp_id: int, date_from: str, date_to: str, limit: int
             WHERE k.killmail_time >= ? AND k.killmail_time < ?
               AND EXISTS (
                   SELECT 1 FROM attackers a
-                  WHERE a.killmail_id = k.killmail_id AND a.corporation_id = ?
+                  WHERE a.killmail_id = k.killmail_id AND a.{id_col} = ?
               )
               AND k.npc_kill = 0
               AND k.solar_system_region_name IS NOT NULL
@@ -348,16 +388,17 @@ def query_region_hotspots(corp_id: int, date_from: str, date_to: str, limit: int
             ORDER BY kills DESC
             LIMIT ?
             """,
-            (date_from, date_to, corp_id, limit),
+            (date_from, date_to, entity_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def query_top_killed_alliances(corp_id: int, date_from: str, date_to: str, limit: int = 10) -> list[dict]:
+def query_top_killed_alliances(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """杀的最多的联盟 — 本方击杀的受害者所属联盟排行。"""
+    id_col = _id_col(entity_type)
     with get_db() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT k.victim_alliance_name,
                    COUNT(DISTINCT k.killmail_id) AS kills,
                    COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
@@ -365,7 +406,7 @@ def query_top_killed_alliances(corp_id: int, date_from: str, date_to: str, limit
             WHERE k.killmail_time >= ? AND k.killmail_time < ?
               AND EXISTS (
                   SELECT 1 FROM attackers a
-                  WHERE a.killmail_id = k.killmail_id AND a.corporation_id = ?
+                  WHERE a.killmail_id = k.killmail_id AND a.{id_col} = ?
               )
               AND k.npc_kill = 0
               AND k.victim_alliance_name IS NOT NULL
@@ -374,23 +415,24 @@ def query_top_killed_alliances(corp_id: int, date_from: str, date_to: str, limit
             ORDER BY kills DESC
             LIMIT ?
             """,
-            (date_from, date_to, corp_id, limit),
+            (date_from, date_to, entity_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-def query_top_attacker_alliances(corp_id: int, date_from: str, date_to: str, limit: int = 10) -> list[dict]:
+def query_top_attacker_alliances(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """杀我们最多的联盟 — 击杀本方成员的攻击者所属联盟排行。"""
+    victim_col = _victim_col(entity_type)
     with get_db() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT a.alliance_name,
                    COUNT(DISTINCT a.killmail_id) AS kills,
                    COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
             FROM attackers a
             JOIN killmails k ON k.killmail_id = a.killmail_id
             WHERE k.killmail_time >= ? AND k.killmail_time < ?
-              AND k.victim_corporation_id = ?
+              AND k.{victim_col} = ?
               AND a.alliance_name IS NOT NULL
               AND a.alliance_name != ''
               AND (a.character_id IS NOT NULL)
@@ -398,7 +440,7 @@ def query_top_attacker_alliances(corp_id: int, date_from: str, date_to: str, lim
             ORDER BY kills DESC
             LIMIT ?
             """,
-            (date_from, date_to, corp_id, limit),
+            (date_from, date_to, entity_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 

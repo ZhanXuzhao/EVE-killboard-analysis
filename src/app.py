@@ -62,6 +62,26 @@ with st.sidebar:
     # 默认联盟：Kuan.Dai.Shan (ID: 99009163)
     DEFAULT_ENTITY_ID = "99009163"
 
+    # ── 查询历史（输入框上方） ──────────────────────────
+
+    if "query_history" not in st.session_state:
+        st.session_state.query_history = []
+
+    if st.session_state.query_history:
+        st.markdown("**📜 最近查询**")
+        cols = st.columns(min(4, len(st.session_state.query_history)))
+        for i, h in enumerate(st.session_state.query_history[:4]):
+            with cols[i]:
+                label = f"{h['name']}"
+                if st.button(label, key=f"hist_{i}", use_container_width=True):
+                    st.session_state.entity_id = h["id"]
+                    st.session_state.entity_name = h["name"]
+                    st.session_state.entity_type = h["type"]
+                    st.session_state.data_loaded = False
+                    st.session_state._last_input = str(h["id"])
+                    st.session_state._history_click = True
+                    st.rerun()
+
     # 军团输入：支持名称或 ID
     corp_input = st.text_input(
         "军团名称 / ID",
@@ -87,26 +107,6 @@ with st.sidebar:
 5. 点击「强制刷新」重新从 zKillboard 拉取
         """
     )
-
-    # ── 查询历史 ────────────────────────────────────────
-
-    if "query_history" not in st.session_state:
-        st.session_state.query_history = []
-
-    if st.session_state.query_history:
-        st.divider()
-        st.markdown("**📜 查询历史**")
-        for i, h in enumerate(st.session_state.query_history):
-            label = f"{h['name']} ({h['type']})"
-            key = f"hist_{i}"
-            if st.button(label, key=key, use_container_width=True):
-                st.session_state.entity_id = h["id"]
-                st.session_state.entity_name = h["name"]
-                st.session_state.entity_type = h["type"]
-                st.session_state.data_loaded = False
-                st.session_state._last_input = str(h["id"])
-                st.session_state._history_click = True
-                st.rerun()
 
 # ── 主逻辑 ──────────────────────────────────────────────
 

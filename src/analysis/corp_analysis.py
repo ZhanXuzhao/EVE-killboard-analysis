@@ -17,9 +17,12 @@ def _get_yesterday_range() -> tuple[str, str]:
     return yesterday_start.isoformat(), today_start.isoformat()
 
 
-def _has_data(corp_id: int, date_from: str, date_to: str) -> bool:
-    """检查数据库中是否有指定军团指定日期的数据。"""
-    km_ids = repo.get_corporation_killmail_ids(corp_id, date_from, date_to)
+def _has_data(entity_id: int, date_from: str, date_to: str, entity_type: str = "corporation") -> bool:
+    """检查数据库中是否有指定实体指定日期的数据。"""
+    if entity_type == "alliance":
+        km_ids = repo.get_alliance_killmail_ids(entity_id, date_from, date_to)
+    else:
+        km_ids = repo.get_corporation_killmail_ids(entity_id, date_from, date_to)
     return len(km_ids) > 0
 
 
@@ -50,7 +53,7 @@ class CorpDailyAnalysis:
         eid = self.entity_id
         etype = self.entity_type
 
-        self.has_data = _has_data(eid, self.date_from, self.date_to)
+        self.has_data = _has_data(eid, self.date_from, self.date_to, etype)
         if not self.has_data:
             return
 
@@ -59,17 +62,17 @@ class CorpDailyAnalysis:
             self.active_members = repo.query_alliance_active_members(eid, self.date_from, self.date_to)
         else:
             self.stats = repo.query_corp_daily_stats(eid, self.date_from, self.date_to)
-            self.active_members = repo.query_active_members(eid, self.date_from, self.date_to)
+            self.active_members = repo.query_active_members(eid, self.date_from, self.date_to, entity_type=etype)
 
-        self.top_killers = repo.query_top_killers(eid, self.date_from, self.date_to)
-        self.top_kill_ships = repo.query_top_kill_ships(eid, self.date_from, self.date_to)
-        self.top_loss_ships = repo.query_top_loss_ships(eid, self.date_from, self.date_to)
-        self.top_victims = repo.query_top_victims(eid, self.date_from, self.date_to)
-        self.hourly_timeline = repo.query_hourly_timeline(eid, self.date_from, self.date_to)
-        self.system_hotspots = repo.query_system_hotspots(eid, self.date_from, self.date_to)
-        self.region_hotspots = repo.query_region_hotspots(eid, self.date_from, self.date_to)
-        self.top_killed_alliances = repo.query_top_killed_alliances(eid, self.date_from, self.date_to)
-        self.top_attacker_alliances = repo.query_top_attacker_alliances(eid, self.date_from, self.date_to)
+        self.top_killers = repo.query_top_killers(eid, self.date_from, self.date_to, entity_type=etype)
+        self.top_kill_ships = repo.query_top_kill_ships(eid, self.date_from, self.date_to, entity_type=etype)
+        self.top_loss_ships = repo.query_top_loss_ships(eid, self.date_from, self.date_to, entity_type=etype)
+        self.top_victims = repo.query_top_victims(eid, self.date_from, self.date_to, entity_type=etype)
+        self.hourly_timeline = repo.query_hourly_timeline(eid, self.date_from, self.date_to, entity_type=etype)
+        self.system_hotspots = repo.query_system_hotspots(eid, self.date_from, self.date_to, entity_type=etype)
+        self.region_hotspots = repo.query_region_hotspots(eid, self.date_from, self.date_to, entity_type=etype)
+        self.top_killed_alliances = repo.query_top_killed_alliances(eid, self.date_from, self.date_to, entity_type=etype)
+        self.top_attacker_alliances = repo.query_top_attacker_alliances(eid, self.date_from, self.date_to, entity_type=etype)
 
     def to_dataframes(self) -> dict[str, pd.DataFrame]:
         """将分析结果转换为 Pandas DataFrame 字典。"""

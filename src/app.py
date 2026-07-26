@@ -134,7 +134,12 @@ with st.sidebar:
     if "_report_type" not in st.session_state:
         st.session_state._report_type = "daily"
 
-    col_date, col_type = st.columns([3, 2])
+    col_type, col_date = st.columns([1, 3])
+    with col_type:
+        _rt = st.radio("📊 类型", ["日报", "周报"], horizontal=True,
+                       index=0 if st.session_state._report_type == "daily" else 1,
+                       label_visibility="collapsed")
+        report_type = "daily" if _rt == "日报" else "weekly"
     with col_date:
         selected_date = st.date_input(
             "📅 选择日期",
@@ -142,11 +147,6 @@ with st.sidebar:
             max_value=today,
             help="选择要分析的日期",
         )
-    with col_type:
-        _rt = st.radio("📊 类型", ["日报", "周报"], horizontal=True,
-                       index=0 if st.session_state._report_type == "daily" else 1,
-                       label_visibility="collapsed")
-        report_type = "daily" if _rt == "日报" else "weekly"
 
     if selected_date != st.session_state.selected_date or report_type != st.session_state._report_type:
         st.session_state.selected_date = selected_date
@@ -287,12 +287,13 @@ with st.sidebar:
     st.markdown("**💡 使用说明**")
     st.markdown(
         """
-1. 输入**军团名称**（中文/英文均可）或**数字 ID**
-2. 输入名称后会自动搜索，从结果中选择目标军团
-3. 选择要分析的**日期**
-4. 点击「分析」
-5. **使用缓存**勾选时，跳过 API 请求，直接分析本地已有数据
-6. 取消勾选则强制从 zKillboard 拉取最新数据
+1. 输入**军团/联盟名称**或**数字 ID**，输入名称后会自动搜索
+2. 在搜索结果中选择目标军团/联盟
+3. 选择**日报**或**周报**模式，并选择要分析的**日期**
+4. 点击「📊 分析」按钮
+5. **最近查询**按钮可直接跳转到历史记录
+6. **使用缓存**勾选时跳过 API 请求，直接使用本地已有数据
+7. ⚠️ zKillboard API 最多支持查询 **7 天以内** 的数据
         """
     )
 
@@ -351,6 +352,11 @@ def load_data(date_from, date_to, use_cache: bool = True):
     days_ago = (today - range_end).days + 1
     past_seconds = max(86400, (days_ago + 1) * 86400)
 
+    # zKillboard API 限制 pastSeconds 最大 7 天（604800 秒）
+    if past_seconds > 604800:
+        st.error(f"❌ zKillboard API 最多只能查询最近 7 天的数据，所选日期距今已超过 {days_ago} 天。请选择更近的日期。")
+        return False
+
     progress_bar = st.progress(0, text="正在拉取击杀数据...")
     status_text = st.empty()
 
@@ -365,7 +371,11 @@ def load_data(date_from, date_to, use_cache: bool = True):
     try:
         results = fetch_entity_yesterday_kills(entity_id, entity_type=entity_type or "corporation", on_progress=on_progress, past_seconds=past_seconds)
     except RuntimeError as e:
-        st.error(f"❌ {e}")
+        err_msg = str(e)
+        if "pastSeconds" in err_msg:
+            st.error(f"❌ zKillboard API 限制：最多查询 7 天内的数据。请选择更近的日期。")
+        else:
+            st.error(f"❌ {err_msg}")
         return False
     except Exception as e:
         st.error(f"❌ 数据拉取失败: {e}")
@@ -540,45 +550,43 @@ if entity_id is not None:
             yaxis_title="数量",
         )
         fig.update_xaxes(dtick=2)
-        st.plotly_chart(fig, width="stretch")
 
-        # 周报模式下额外按天统计
+        # 周报模式：按时(3) + 按日(1) 同行
         if report_type == "weekly" and "daily_timeline" in dfs:
-            dfd = dfs["daily_timeline"].copy()
-            dfd["kill_isk_label"] = dfd["kill_isk"].apply(_fmt)
-            dfd["loss_isk_label"] = dfd["loss_isk"].apply(_fmt)
-            figd = go.Figure()
-            figd.add_trace(go.Bar(
-                x=dfd["day"], y=dfd["kills"],
-                name="击杀",
-                marker=dict(
-                    color=dfd["kill_isk"],
-                    colorscale="Greens",
-                    showscale=False,
-                ),
-                hovertemplate="%{x}<br>击杀: %{y}<br>ISK: %{customdata[0]}<extra></extra>",
-                customdata=dfd[["kill_isk_label"]].values,
-            ))
-            figd.add_trace(go.Bar(
-                x=dfd["day"], y=dfd["losses"],
-                name="损失",
-                marker=dict(
-                    color=dfd["loss_isk"],
-                    colorscale="Reds",
-                    showscale=False,
-                ),
-                hovertemplate="%{x}<br>损失: %{y}<br>ISK: %{customdata[0]}<extra></extra>",
-                customdata=dfd[["loss_isk_label"]].values,
-            ))
-            figd.update_layout(
-                barmode="group",
-                height=300,
-                margin=dict(l=20, r=20, t=20, b=20),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
-                xaxis_title="日期",
-                yaxis_title="数量",
-            )
-            st.plotly_chart(figd, width="stretch")
+            col_h, col_d = st.columns([3, 1])
+            with col_h:
+                st.plotly_chart(fig, width="stretch")
+            with col_d:
+                dfd = dfs["daily_timeline"].copy()
+                dfd["kill_isk_label"] = dfd["kill_isk"].apply(_fmt)
+                dfd["loss_isk_label"] = dfd["loss_isk"].apply(_fmt)
+                figd = go.Figure()
+                figd.add_trace(go.Bar(
+                    x=dfd["day"], y=dfd["kills"],
+                    name="击杀",
+                    marker=dict(color=dfd["kill_isk"], colorscale="Greens", showscale=False),
+                    hovertemplate="%{x}<br>击杀: %{y}<br>ISK: %{customdata[0]}<extra></extra>",
+                    customdata=dfd[["kill_isk_label"]].values,
+                ))
+                figd.add_trace(go.Bar(
+                    x=dfd["day"], y=dfd["losses"],
+                    name="损失",
+                    marker=dict(color=dfd["loss_isk"], colorscale="Reds", showscale=False),
+                    hovertemplate="%{x}<br>损失: %{y}<br>ISK: %{customdata[0]}<extra></extra>",
+                    customdata=dfd[["loss_isk_label"]].values,
+                ))
+                figd.update_layout(
+                    barmode="group",
+                    height=300,
+                    margin=dict(l=10, r=10, t=20, b=20),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+                    xaxis_title="日期",
+                    yaxis_title="数量",
+                    xaxis_tickangle=-45,
+                )
+                st.plotly_chart(figd, width="stretch")
+        else:
+            st.plotly_chart(fig, width="stretch")
     else:
         st.info("暂无时间分布数据")
 

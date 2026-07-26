@@ -418,7 +418,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
             orientation="h",
             labels={"kills": "击杀数", "solar_system_region_name": "星域"},
             color="total_isk",
-            color_continuous_scale="Viridis",
+            color_continuous_scale="Reds",
             text="kills",
         )
         fig.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20))
@@ -445,7 +445,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 orientation="h",
                 labels={"count": "击杀数", "display": "舰船"},
                 color="total_isk",
-                color_continuous_scale="Greens",
+                color_continuous_scale="Reds",
                 text="count",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
@@ -468,7 +468,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 orientation="h",
                 labels={"count": "损失数", "display": "舰船"},
                 color="total_isk",
-                color_continuous_scale="OrRd",
+                color_continuous_scale="Reds",
                 text="count",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
@@ -529,7 +529,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 orientation="h",
                 labels={"kills": "击杀数", "display": "联盟"},
                 color="total_isk",
-                color_continuous_scale="Reds",
+            color_continuous_scale="Reds",
                 text="kills",
             )
             fig.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20))
@@ -552,7 +552,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 orientation="h",
                 labels={"kills": "击杀数", "display": "联盟"},
                 color="total_isk",
-                color_continuous_scale="OrRd",
+                color_continuous_scale="Reds",
                 text="kills",
             )
             fig.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20))

@@ -672,33 +672,38 @@ def is_cache_valid(entity_id: int, entity_type: str, date_from: str, date_to: st
     """判断数据库中的缓存数据是否仍然有效。
 
     规则：
-      - 今天数据：5 分钟内有效
-      - 昨天数据：12 小时内有效
-      - 前天及更早：永久有效
-      - 不完整的数据：无效（触发重拉）
+      - 不完整 → 无效
+      - 数据为空（0 条） → 最多缓存 1 小时（防网络波动）
+      - 完整且有数据：
+        - 今天 → 5 分钟
+        - 昨天 → 12 小时
+        - 前天及更早 → 永久
     """
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     log = get_fetch_log(entity_id, entity_type, date_from, date_to)
-    if not log:
-        return False
-    if not log["complete"]:
+    if not log or not log["complete"]:
         return False
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
+    fetched = datetime.fromisoformat(log["fetched_at"])
+    if fetched.tzinfo is None:
+        fetched = fetched.replace(tzinfo=timezone.utc)
+
+    # 空数据：最多缓存 1 小时，避免网络波动导致永久缺数据
+    if log["killmail_count"] == 0:
+        return (now - fetched).total_seconds() < 3600
+
     date_from_dt = datetime.fromisoformat(date_from)
+    if date_from_dt.tzinfo is None:
+        date_from_dt = date_from_dt.replace(tzinfo=timezone.utc)
     days_ago = (now.date() - date_from_dt.date()).days
 
     if days_ago <= 0:
-        # 今天
-        fetched = datetime.fromisoformat(log["fetched_at"])
-        return (now - fetched).total_seconds() < 300  # 5 分钟
-    elif days_ago == 1:
-        # 昨天
-        fetched = datetime.fromisoformat(log["fetched_at"])
-        return (now - fetched).total_seconds() < 43200  # 12 小时
-    # 前天及更早 — 永久有效
-    return True
+        return (now - fetched).total_seconds() < 300  # 今天: 5 分钟
+    if days_ago == 1:
+        return (now - fetched).total_seconds() < 43200  # 昨天: 12 小时
+    return True  # 前天及更早: 永久
 
 
 def query_joint_kills_alliances(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:

@@ -1,18 +1,16 @@
 """zKillboard API 客户端 — 获取并解析击杀数据。"""
 
-import json
 import logging
-from pathlib import Path
 from typing import Optional
 
 import requests
 
 from src.config import (
-    DATA_DIR,
     ZKILLBOARD_BASE_URL,
     REQUEST_TIMEOUT,
     USER_AGENT,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -68,26 +66,39 @@ def _batch_resolve_ids(id_batch: list[int]) -> dict[int, str]:
 # ── 星系→星域 本地缓存 ──────────────────────────────────
 
 _SYSTEM_REGION_CACHE: dict[int, str] = {}
-_SYSTEM_REGION_CACHE_FILE = DATA_DIR / "system_region_cache.json"
+_SYSTEM_REGION_CACHE_LOADED = False
 
 
 def _load_system_region_cache():
-    """加载本地缓存。"""
-    global _SYSTEM_REGION_CACHE
-    if not _SYSTEM_REGION_CACHE and _SYSTEM_REGION_CACHE_FILE.exists():
-        try:
-            with open(_SYSTEM_REGION_CACHE_FILE, encoding="utf-8") as f:
-                _SYSTEM_REGION_CACHE = {int(k): v for k, v in json.load(f).items()}
-        except Exception:
-            _SYSTEM_REGION_CACHE = {}
+    """从 SQLite 加载星系→星域缓存到内存。"""
+    global _SYSTEM_REGION_CACHE, _SYSTEM_REGION_CACHE_LOADED
+    if _SYSTEM_REGION_CACHE_LOADED:
+        return
+    _SYSTEM_REGION_CACHE.clear()
+    try:
+        from src.storage.database import get_db
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT system_id, region_name FROM system_region_cache"
+            ).fetchall()
+            for row in rows:
+                _SYSTEM_REGION_CACHE[row["system_id"]] = row["region_name"]
+    except Exception as e:
+        logger.warning(f"加载星域缓存失败: {e}")
+    _SYSTEM_REGION_CACHE_LOADED = True
 
 
 def _save_system_region_cache():
-    """保存本地缓存。"""
+    """将内存中的星系→星域缓存写入 SQLite。"""
+    if not _SYSTEM_REGION_CACHE:
+        return
     try:
-        _SYSTEM_REGION_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(_SYSTEM_REGION_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(_SYSTEM_REGION_CACHE, f, ensure_ascii=False)
+        from src.storage.database import get_db
+        with get_db() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO system_region_cache (system_id, region_name) VALUES (?, ?)",
+                list(_SYSTEM_REGION_CACHE.items()),
+            )
     except Exception as e:
         logger.warning(f"保存星域缓存失败: {e}")
 
@@ -95,26 +106,39 @@ def _save_system_region_cache():
 # ── 通用 ID→名称 本地缓存 ───────────────────────────────
 
 _ID_NAME_CACHE: dict[int, str] = {}
-_ID_NAME_CACHE_FILE = DATA_DIR / "id_name_cache.json"
+_ID_NAME_CACHE_LOADED = False
 
 
 def _load_id_name_cache():
-    """加载 ID→名称缓存。"""
-    global _ID_NAME_CACHE
-    if not _ID_NAME_CACHE and _ID_NAME_CACHE_FILE.exists():
-        try:
-            with open(_ID_NAME_CACHE_FILE, encoding="utf-8") as f:
-                _ID_NAME_CACHE = {int(k): v for k, v in json.load(f).items()}
-        except Exception:
-            _ID_NAME_CACHE = {}
+    """从 SQLite 加载 ID→名称缓存到内存。"""
+    global _ID_NAME_CACHE, _ID_NAME_CACHE_LOADED
+    if _ID_NAME_CACHE_LOADED:
+        return
+    _ID_NAME_CACHE.clear()
+    try:
+        from src.storage.database import get_db
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT entity_id, name FROM id_name_cache"
+            ).fetchall()
+            for row in rows:
+                _ID_NAME_CACHE[row["entity_id"]] = row["name"]
+    except Exception as e:
+        logger.warning(f"加载 ID 名称缓存失败: {e}")
+    _ID_NAME_CACHE_LOADED = True
 
 
 def _save_id_name_cache():
-    """保存 ID→名称缓存。"""
+    """将内存中的 ID→名称缓存写入 SQLite。"""
+    if not _ID_NAME_CACHE:
+        return
     try:
-        _ID_NAME_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(_ID_NAME_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(_ID_NAME_CACHE, f, ensure_ascii=False)
+        from src.storage.database import get_db
+        with get_db() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO id_name_cache (entity_id, name) VALUES (?, ?)",
+                list(_ID_NAME_CACHE.items()),
+            )
     except Exception as e:
         logger.warning(f"保存 ID 名称缓存失败: {e}")
 
@@ -123,7 +147,7 @@ def _enrich_system_regions(kills: list[dict]) -> list[dict]:
     """解析星系 ID 对应的星域名称并注入。
 
     流程：星系 → 星座(获取 region_id) → 星域(获取名称)
-    使用本地 JSON 缓存加速后续查询。
+    使用 SQLite 缓存加速后续查询。
     """
     _load_system_region_cache()
 

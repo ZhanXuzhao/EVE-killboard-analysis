@@ -1,8 +1,15 @@
 """SQLite 数据库初始化与连接管理。"""
 
+import json
+import logging
 import sqlite3
 from contextlib import contextmanager
-from src.config import DB_PATH
+from pathlib import Path
+from typing import Optional
+
+from src.config import DATA_DIR, DB_PATH
+
+logger = logging.getLogger(__name__)
 
 
 def get_connection() -> sqlite3.Connection:
@@ -100,6 +107,18 @@ def init_db():
                 complete       INTEGER DEFAULT 0,
                 PRIMARY KEY (entity_id, entity_type, date_from, date_to)
             );
+
+            -- ID→名称缓存表
+            CREATE TABLE IF NOT EXISTS id_name_cache (
+                entity_id INTEGER PRIMARY KEY,
+                name      TEXT NOT NULL
+            );
+
+            -- 星系→星域缓存表
+            CREATE TABLE IF NOT EXISTS system_region_cache (
+                system_id    INTEGER PRIMARY KEY,
+                region_name  TEXT NOT NULL
+            );
         """)
 
         # 兼容旧数据库：新增列
@@ -108,3 +127,147 @@ def init_db():
                 conn.execute(f"ALTER TABLE killmails ADD COLUMN {col} TEXT")
             except sqlite3.OperationalError:
                 pass  # 列已存在
+
+    # 迁移旧 JSON 缓存到数据库
+    _migrate_json_cache()
+
+
+def _migrate_json_cache():
+    """将旧的 JSON 缓存文件导入到数据库表中。"""
+    _migrate_single_cache(
+        table="system_region_cache",
+        json_file=DATA_DIR / "system_region_cache.json",
+        key_col="system_id",
+        val_col="region_name",
+    )
+    _migrate_single_cache(
+        table="id_name_cache",
+        json_file=DATA_DIR / "id_name_cache.json",
+        key_col="entity_id",
+        val_col="name",
+    )
+
+
+def _migrate_single_cache(table: str, json_file: Path, key_col: str, val_col: str):
+    """将单个 JSON 缓存文件导入到数据库表中，已存在的记录跳过。"""
+    if not json_file.exists():
+        return
+    try:
+        with open(json_file, encoding="utf-8") as f:
+            data = json.load(f)
+        if not data:
+            return
+        with get_db() as conn:
+            count = 0
+            for k, v in data.items():
+                try:
+                    conn.execute(
+                        f"INSERT OR IGNORE INTO {table} ({key_col}, {val_col}) VALUES (?, ?)",
+                        (int(k), v),
+                    )
+                    if conn.total_changes:
+                        count += 1
+                except (ValueError, sqlite3.OperationalError):
+                    continue
+            logger.info(
+                "迁移 %s: %d 条记录（总 %d）",
+                json_file.name, count, len(data),
+            )
+        # 迁移成功后重命名 JSON 文件（保留备份）
+        backup = json_file.with_suffix(".json.bak")
+        json_file.rename(backup)
+        logger.info("旧缓存 %s → %s", json_file.name, backup.name)
+    except Exception as e:
+        logger.warning("迁移 %s 失败: %s", json_file.name, e)
+
+
+# ── ID→名称 缓存操作 ────────────────────────────────────
+
+
+def get_id_name(entity_id: int) -> Optional[str]:
+    """从缓存中查询单个 ID 的名称。"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT name FROM id_name_cache WHERE entity_id = ?",
+            (entity_id,),
+        ).fetchone()
+        return row["name"] if row else None
+
+
+def has_id_name(entity_id: int) -> bool:
+    """检查 ID 是否在缓存中。"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM id_name_cache WHERE entity_id = ?",
+            (entity_id,),
+        ).fetchone()
+        return row is not None
+
+
+def batch_get_id_names(entity_ids: list[int]) -> dict[int, str]:
+    """批量查询缓存中的 ID→名称。"""
+    if not entity_ids:
+        return {}
+    placeholders = ",".join("?" * len(entity_ids))
+    with get_db() as conn:
+        rows = conn.execute(
+            f"SELECT entity_id, name FROM id_name_cache WHERE entity_id IN ({placeholders})",
+            entity_ids,
+        ).fetchall()
+        return {row["entity_id"]: row["name"] for row in rows}
+
+
+def batch_set_id_names(name_map: dict[int, str]):
+    """批量写入 ID→名称到缓存。"""
+    if not name_map:
+        return
+    with get_db() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO id_name_cache (entity_id, name) VALUES (?, ?)",
+            list(name_map.items()),
+        )
+
+
+# ── 星系→星域 缓存操作 ──────────────────────────────────
+
+
+def get_system_region(system_id: int) -> Optional[str]:
+    """从缓存中查询星系对应的星域名称。"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT region_name FROM system_region_cache WHERE system_id = ?",
+            (system_id,),
+        ).fetchone()
+        return row["region_name"] if row else None
+
+
+def has_system_region(system_id: int) -> bool:
+    """检查星系是否在缓存中。"""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM system_region_cache WHERE system_id = ?",
+            (system_id,),
+        ).fetchone()
+        return row is not None
+
+
+def batch_get_system_regions(system_ids: list[int]) -> dict[int, str]:
+    """批量查询缓存中的星系→星域。"""
+    if not system_ids:
+        return {}
+    placeholders = ",".join("?" * len(system_ids))
+    with get_db() as conn:
+        rows = conn.execute(
+            f"SELECT system_id, region_name FROM system_region_cache WHERE system_id IN ({placeholders})",
+            system_ids,
+        ).fetchall()
+        return {row["system_id"]: row["region_name"] for row in rows}
+
+
+def set_system_region(system_id: int, region_name: str):
+    """写入星系→星域到缓存。"""
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO system_region_cache (system_id, region_name) VALUES (?, ?)",
+            (system_id, region_name),
+        )

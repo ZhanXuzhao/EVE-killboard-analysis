@@ -158,9 +158,10 @@ EVE-killboard-analysis/
 ├── requirements.txt
 ├── data/                           # 运行时数据
 │   ├── killboard.db                # SQLite 数据库（自动生成）
-│   ├── id_name_cache.json          # ID→名称缓存
+│   ├── killboard.db                # SQLite 数据库（含 ID→名称、星系→星域缓存表）
 │   ├── query_history.json          # 查询历史持久化
-│   └── system_region_cache.json    # 星系→星域映射缓存
+│   ├── id_name_cache.json.bak      # ID→名称缓存（旧 JSON 备份，已迁移至 DB）
+│   └── system_region_cache.json.bak# 星系→星域映射缓存（旧 JSON 备份，已迁移至 DB）
 └── src/
     ├── __init__.py
     ├── app.py                      # Streamlit 主入口 + UI

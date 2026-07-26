@@ -363,9 +363,14 @@ def load_data(date_from, date_to, status):
             status.update(label="✅ 数据加载完成（缓存有效）", state="complete")
             return True
 
-    # 计算回溯秒数
+    # 计算回溯秒数：从当前时间倒退到查询起点 + 1 天缓冲
     start_dt = datetime.fromisoformat(date_from)
-    end_dt = datetime.fromisoformat(date_to)
+    if start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    _past_sec = int((now - start_dt).total_seconds()) + 86400  # 多拉 1 天保底
+    if _past_sec > 604800:
+        _past_sec = 604800
 
     # 步骤 2: 拉取击杀列表
     with _step_timer(status, 2, total, "从 zKillboard 拉取击杀列表"):
@@ -373,13 +378,6 @@ def load_data(date_from, date_to, status):
             if items_in_page > 0:
                 status.write(f"   ↳ 第 {page} 页（{items_in_page} 条）")
         try:
-            # pastSeconds 最大 7 天
-            _range_days = (end_dt - start_dt).days
-            _past_sec = max(86400, (_range_days + 1) * 86400)
-            if _past_sec > 604800:
-                status.write("❌ zKillboard API 最多只能查询最近 7 天的数据")
-                status.update(label="❌ 数据超限", state="error")
-                return False
             results, complete = fetch_entity_kills(
                 entity_id, etype,
                 past_seconds=_past_sec,
@@ -395,7 +393,12 @@ def load_data(date_from, date_to, status):
             return False
 
     if not results:
-        upsert_fetch_log(entity_id, etype, date_from, date_to, 0, True)
+        _fetch_start = (now - timedelta(seconds=_past_sec)).replace(tzinfo=timezone.utc)
+        _day = _fetch_start
+        while _day < now:
+            _next = _day + timedelta(days=1)
+            upsert_fetch_log(entity_id, etype, _day.isoformat(), _next.isoformat(), 0, True)
+            _day = _next
         status.write("   ↳ 无数据")
         status.update(label="⚠️ 该时段无击杀记录", state="complete")
         return True
@@ -418,8 +421,16 @@ def load_data(date_from, date_to, status):
                 saved += 1
         status.write(f"   ↳ 新增 {saved} 条, 跳过 {skipped} 条重复")
 
-    # 写入 fetch log
-    upsert_fetch_log(entity_id, etype, date_from, date_to, saved + skipped, complete)
+    # 写入 fetch log：按实际拉取范围拆成每天一条
+    _fetch_start = (now - timedelta(seconds=_past_sec)).replace(tzinfo=timezone.utc)
+    _fetch_end = now
+    _day = _fetch_start
+    while _day < _fetch_end:
+        _next = _day + timedelta(days=1)
+        _day_from = _day.isoformat()
+        _day_to = _next.isoformat()
+        upsert_fetch_log(entity_id, etype, _day_from, _day_to, 0 if not results else saved + skipped, complete)
+        _day = _next
     status.write(f"   ↳ 拉取{'完整' if complete else '不完整（可能还有下一页）'}")
 
     # 步骤 6: 名称重试（在分析阶段执行）

@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 _session = requests.Session()
 _session.headers.update({"User-Agent": USER_AGENT})
 
+# ESI API 端点
+_ESI_NAMES_URL = "https://esi.evetech.net/latest/universe/names/"
+
 
 def _request(path: str, params: Optional[dict] = None) -> Optional[dict | list]:
     """发送 GET 请求到 zKillboard API。"""
@@ -388,20 +391,7 @@ def fetch_entity_kills(
     on_progress: Optional[callable] = None,
     past_seconds: int = 86400,
 ) -> tuple[list[dict], bool]:
-    """拉取军团/联盟在最近 N 秒内的击杀数据（自动翻页），返回数据和完整性标志。
-
-    zKillboard 每页最多 200 条，自动逐页拉取直到无数据。
-    如果最后一页不足 200 条，标记为 complete=True。
-
-    Args:
-        entity_id: ID
-        entity_type: "corporation" 或 "alliance"
-        on_progress: 进度回调 (page, items_in_page)
-        past_seconds: 回溯秒数，默认 86400（1 天），最大 604800（7 天）
-
-    Returns:
-        (results, complete)
-    """
+    """拉取军团/联盟在最近 N 秒内的击杀数据（自动翻页），返回数据和完整性标志。"""
     get_fn = get_alliance_kills if entity_type == "alliance" else get_corporation_kills
 
     all_kills = []
@@ -417,7 +407,7 @@ def fetch_entity_kills(
         if not kills:
             break
 
-        all_kills.extend(kills)
+        all_kills.extend(k for k in kills if k is not None)
         if on_progress:
             on_progress(page, len(kills))
 
@@ -433,6 +423,7 @@ def fetch_entity_kills(
     if on_progress:
         on_progress(page, 0)
 
+    # ESI 名称解析 & 星域解析
     all_kills = _enrich_killmail_names(all_kills)
     all_kills = _enrich_system_regions(all_kills)
 

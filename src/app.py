@@ -92,6 +92,24 @@ with st.sidebar:
         st.query_params.clear()
 
     if st.session_state.query_history:
+        # 检查当前 entity 是否已在历史中，不在则前置插入
+        _cur_id = st.session_state.get("entity_id")
+        _cur_name = st.session_state.get("entity_name")
+        if _cur_id and _cur_name:
+            _cur = {"id": _cur_id, "type": st.session_state.get("entity_type", "corporation")}
+            if not any(h["id"] == _cur["id"] and h.get("type") == _cur["type"] for h in st.session_state.query_history):
+                _entry = {"id": _cur["id"], "name": st.session_state.entity_name,
+                          "type": _cur["type"], "ticker": st.session_state.get("_last_ticker", "")}
+                st.session_state.query_history.insert(0, _entry)
+                st.session_state.query_history = st.session_state.query_history[:10]
+                try:
+                    import json
+                    _hf = Path(__file__).resolve().parent.parent / "data" / "query_history.json"
+                    with open(_hf, "w", encoding="utf-8") as _f:
+                        json.dump(st.session_state.query_history, _f, ensure_ascii=False, indent=2)
+                except Exception:
+                    pass
+
         hcol1, hcol2 = st.columns([3, 1])
         with hcol1:
             st.markdown("**📜 最近查询**")
@@ -100,10 +118,9 @@ with st.sidebar:
                 f'<a href="/?clear=1" target="_self" style="color:#999;text-decoration:none;font-size:0.85em" title="清空所有查询历史">✕</a>',
                 unsafe_allow_html=True,
             )
-        num_cols = min(3, len(st.session_state.query_history))
-        cols = st.columns(num_cols)
-        for i, h in enumerate(st.session_state.query_history[:num_cols]):
-            with cols[i]:
+        cols = st.columns(3)
+        for i, h in enumerate(st.session_state.query_history[:9]):
+            with cols[i % 3]:
                 label = f"{h.get('ticker', h['name'])}"
                 if st.button(label, key=f"hist_{i}", use_container_width=True):
                     st.session_state.entity_id = h["id"]
@@ -369,6 +386,7 @@ if analyze_btn or not st.session_state.data_loaded:
         _tc = st.session_state.get("_ticker_cache", {})
         _tc[entity_id] = _ticker
         st.session_state._ticker_cache = _tc
+    st.session_state._last_ticker = _ticker or ""
 
     display_name = entity_name or f"ID: {entity_id}"
     if _ticker:
@@ -390,7 +408,7 @@ if analyze_btn or not st.session_state.data_loaded:
 
     # 记录查询历史
     _history = st.session_state.query_history
-    _entry = {"id": entity_id, "name": display_name, "type": entity_type or "corporation", "ticker": _ticker}
+    _entry = {"id": entity_id, "name": display_name.split(" <")[0], "type": entity_type or "corporation", "ticker": _ticker}
     # 去重：如果已存在则删除旧记录
     _history[:] = [h for h in _history if not (h["id"] == entity_id and h["type"] == (entity_type or "corporation"))]
     _history.insert(0, _entry)

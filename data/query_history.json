@@ -1,32 +1,50 @@
 [
   {
-    "id": 99009163,
-    "name": "Dracarys. <D.C>",
-    "type": "alliance",
-    "ticker": "D.C"
-  },
-  {
-    "id": 1354830081,
-    "name": "Goonswarm Federation <CONDI>",
-    "type": "alliance",
-    "ticker": "CONDI"
+    "id": 98648061,
+    "name": "Tu Zi Fei Corporation",
+    "type": "corporation",
+    "ticker": "TU ZI"
   },
   {
     "id": 99012019,
-    "name": "Can i bring my Drake... <-BMD> <-BMD>",
+    "name": "Can i bring my Drake...",
     "type": "alliance",
     "ticker": "-BMD"
   },
   {
     "id": 1900696668,
-    "name": "The Initiative. <INIT.> <INIT.> <INIT.>",
+    "name": "The Initiative.",
     "type": "alliance",
     "ticker": "INIT."
   },
   {
+    "id": 99009163,
+    "name": "Dracarys.",
+    "type": "alliance",
+    "ticker": "D.C"
+  },
+  {
+    "id": 1354830081,
+    "name": "Goonswarm Federation <CONDI> <CONDI> <CONDI> <CONDI>",
+    "type": "alliance",
+    "ticker": "CONDI"
+  },
+  {
     "id": 99003581,
-    "name": "Fraternity. <FRT>",
+    "name": "Fraternity. <FRT> <FRT> <FRT> <FRT>",
     "type": "alliance",
     "ticker": "FRT"
+  },
+  {
+    "id": 98557697,
+    "name": "Lost Legends <L-LGD>",
+    "type": "corporation",
+    "ticker": "L-LGD"
+  },
+  {
+    "id": 98779490,
+    "name": "Goose Squad <GS-SQ>",
+    "type": "corporation",
+    "ticker": "GS-SQ"
   }
 ]

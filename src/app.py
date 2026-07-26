@@ -706,7 +706,7 @@ if entity_id is not None:
             df = dfs["joint_kills_alliances"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
             df["display"] = df.apply(
-                lambda r: f"{r['alliance_name']} ({r['joint_kills']})", axis=1
+                lambda r: f"{r['alliance_name']}  ({r['joint_kills']}次)", axis=1
             )
             fig = px.bar(
                 df.head(10).iloc[::-1],
@@ -717,7 +717,7 @@ if entity_id is not None:
                 color="total_isk",
                 color_continuous_scale="Blues",
                 text="joint_kills",
-                hover_data={"total_isk": False, "isk_label": True, "participant_count": True},
+                hover_data={"total_isk": False, "isk_label": True},
             )
             fig.update_layout(
                 height=300,
@@ -731,24 +731,21 @@ if entity_id is not None:
 
     with col_j2:
         st.subheader("👥 联合人数（各联盟参战人数 Top）")
-        if "joint_kills_participants" in dfs:
-            df = dfs["joint_kills_participants"].copy()
+        if "joint_kills_alliances" in dfs:
+            df = dfs["joint_kills_alliances"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
+            # 按参战人数排序
+            df = df.sort_values("participant_count", ascending=False).head(10)
             df["display"] = df.apply(
-                lambda r: f"{r['alliance_name']} ({r['participant_count']}人)", axis=1
-            )
-            # 找出本方联盟（与 entity_id 匹配的行）高亮
-            _self_id = entity_id if entity_type == "alliance" else None
-            colors = df["alliance_id"].apply(
-                lambda x: "#4C78A8" if x == _self_id else None
+                lambda r: f"{r['alliance_name']}  ({r['participant_count']}人)", axis=1
             )
             fig = px.bar(
-                df.head(10).iloc[::-1],
+                df.iloc[::-1],
                 x="participant_count",
                 y="display",
                 orientation="h",
                 labels={"participant_count": "参战人数", "display": "联盟"},
-                color="total_isk",
+                color="joint_kills",
                 color_continuous_scale="Blues",
                 text="participant_count",
                 hover_data={"total_isk": False, "isk_label": True, "joint_kills": True},
@@ -756,7 +753,8 @@ if entity_id is not None:
             fig.update_layout(
                 height=300,
                 margin=dict(l=20, r=20, t=20, b=20),
-                xaxis_title="参战角色数",
+                xaxis_title="参战人数",
+                coloraxis_colorbar_title="合作击杀数",
             )
             fig.update_traces(textposition="outside")
             st.plotly_chart(fig, width="stretch")

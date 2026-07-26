@@ -143,10 +143,17 @@ class CorpDailyAnalysis:
             dfs["top_attacker_alliances"] = pd.DataFrame(self.top_attacker_alliances)
 
         if self.joint_kills_alliances:
-            dfs["joint_kills_alliances"] = pd.DataFrame(self.joint_kills_alliances)
+            df = pd.DataFrame(self.joint_kills_alliances)
+            # 确保 participant_count 列存在（可能在旧数据库查询中缺失）
+            if "participant_count" not in df.columns:
+                df["participant_count"] = 0
+            dfs["joint_kills_alliances"] = df
 
         if self.joint_kills_participants:
-            dfs["joint_kills_participants"] = pd.DataFrame(self.joint_kills_participants)
+            df = pd.DataFrame(self.joint_kills_participants)
+            if "participant_count" not in df.columns:
+                df["participant_count"] = 0
+            dfs["joint_kills_participants"] = df
 
         return dfs
 

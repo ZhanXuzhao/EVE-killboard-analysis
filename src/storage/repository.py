@@ -553,10 +553,10 @@ def query_joint_kills_alliances(entity_id: int, date_from: str, date_to: str, li
 
 
 def query_joint_kills_participants(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
-    """联合参战人数 — 统计参与联合击杀的各联盟（含本方）的参战人数。
+    """联合参战人数 — 统计参与联合击杀的其他联盟的参战人数。
 
-    对于本方参与的击杀，统计所有参战联盟的击杀数、总 ISK、参与角色数，
-    按参战人数排序。
+    对于本方参与的击杀，统计其他参战联盟的击杀数、总 ISK、参与角色数，
+    按参战人数排序（不含本方）。
     """
     id_col = _id_col(entity_type)
     with get_db() as conn:
@@ -573,6 +573,7 @@ def query_joint_kills_participants(entity_id: int, date_from: str, date_to: str,
             WHERE k.killmail_time >= ? AND k.killmail_time < ?
               AND a1.{id_col} = ?
               AND a2.alliance_id IS NOT NULL AND a2.alliance_id != 0
+              AND (a2.alliance_id != a1.alliance_id OR a1.alliance_id IS NULL)
               AND k.npc_kill = 0
             GROUP BY a2.alliance_id
             ORDER BY participant_count DESC

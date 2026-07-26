@@ -8,13 +8,24 @@ import pandas as pd
 from src.storage import repository as repo
 
 
-def _get_yesterday_range() -> tuple[str, str]:
-    """获取昨天的日期范围 [00:00:00, 00:00:00)。"""
+def _get_date_range(target_date: datetime = None) -> tuple[str, str]:
+    """获取指定日期的 UTC 范围 [00:00:00, 次日00:00:00)。"""
     tz = timezone.utc
-    now = datetime.now(tz)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    yesterday_start = today_start - timedelta(days=1)
-    return yesterday_start.isoformat(), today_start.isoformat()
+    if target_date is None:
+        now = datetime.now(tz)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_start = today_start - timedelta(days=1)
+    else:
+        # target_date 可能是 datetime.date 或 datetime.datetime
+        if isinstance(target_date, datetime):
+            day_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=tz)
+        else:
+            day_start = datetime(target_date.year, target_date.month, target_date.day, tzinfo=tz)
+    next_day = day_start + timedelta(days=1)
+    return day_start.isoformat(), next_day.isoformat()
+
+
+_get_yesterday_range = _get_date_range  # 保持向后兼容
 
 
 def _has_data(entity_id: int, date_from: str, date_to: str, entity_type: str = "corporation") -> bool:
@@ -111,9 +122,9 @@ class CorpDailyAnalysis:
         return dfs
 
 
-def analyze_entity_yesterday(entity_id: int, entity_type: str = "corporation") -> CorpDailyAnalysis:
-    """便捷方法：分析军团/联盟昨日数据。"""
-    date_from, date_to = _get_yesterday_range()
+def analyze_entity_yesterday(entity_id: int, entity_type: str = "corporation", target_date: datetime = None) -> CorpDailyAnalysis:
+    """分析军团/联盟指定日期的数据，默认昨日。"""
+    date_from, date_to = _get_date_range(target_date)
     analysis = CorpDailyAnalysis(entity_id, date_from, date_to, entity_type)
     analysis.run()
     return analysis

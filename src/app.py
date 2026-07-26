@@ -11,11 +11,12 @@ if str(_project_root) not in sys.path:
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
+from datetime import datetime, timedelta, timezone
 
 from src.storage.database import init_db
 from src.collector.zkillboard import fetch_entity_yesterday_kills, search_entities
 from src.storage.repository import save_killmail, has_killmail
-from src.analysis.corp_analysis import analyze_entity_yesterday, _get_yesterday_range, _has_data
+from src.analysis.corp_analysis import analyze_entity_yesterday, _get_date_range, _has_data
 
 # ── 页面配置 ────────────────────────────────────────────
 
@@ -121,6 +122,21 @@ with st.sidebar:
         st.session_state.entity_type = None
         st.session_state.data_loaded = False
 
+    # ── 日期选择 ────────────────────────────────────
+
+    today = datetime.now(timezone.utc).date()
+    if "selected_date" not in st.session_state:
+        st.session_state.selected_date = today - timedelta(days=1)
+    selected_date = st.date_input(
+        "📅 选择日期",
+        value=st.session_state.selected_date,
+        max_value=today,
+        help="选择要分析的日期",
+    )
+    if selected_date != st.session_state.selected_date:
+        st.session_state.selected_date = selected_date
+        st.session_state.data_loaded = False
+
     # ── 搜索表单（仅按 Enter 或点击按钮时触发） ──────
 
     with st.form(key="search_form"):
@@ -130,7 +146,7 @@ with st.sidebar:
             placeholder="例如: Goonswarm Federation 或 987654321",
             help="输入军团名称（自动搜索）或直接输入数字 ID",
         )
-        analyze_btn = st.form_submit_button("📊 分析昨日击杀", type="primary", use_container_width=True)
+        analyze_btn = st.form_submit_button("📊 分析", type="primary", use_container_width=True)
 
         # 表单提交时才执行搜索/解析
         if analyze_btn:
@@ -223,9 +239,10 @@ with st.sidebar:
         """
 1. 输入**军团名称**（中文/英文均可）或**数字 ID**
 2. 输入名称后会自动搜索，从结果中选择目标军团
-3. 点击「分析昨日击杀」
-4. **使用缓存**勾选时，跳过 API 请求，直接分析本地已有数据
-5. 取消勾选则强制从 zKillboard 拉取最新数据
+3. 选择要分析的**日期**
+4. 点击「分析」
+5. **使用缓存**勾选时，跳过 API 请求，直接分析本地已有数据
+6. 取消勾选则强制从 zKillboard 拉取最新数据
         """
     )
 
@@ -269,11 +286,11 @@ if st.session_state.pop("_search_selected", False):
 
 # ── 数据加载 ────────────────────────────────────────────
 
-def load_data(use_cache: bool = True):
-    """拉取并存储昨日数据。"""
+def load_data(target_date, use_cache: bool = True):
+    """拉取并存储指定日期的数据。"""
     # 使用缓存时检查数据库是否有数据
     if use_cache:
-        dt_from, dt_to = _get_yesterday_range()
+        dt_from, dt_to = _get_date_range(target_date)
         if _has_data(entity_id, dt_from, dt_to, entity_type=entity_type or "corporation"):
             st.info("📦 本地已有缓存数据，跳过 API 请求")
             return True
@@ -315,7 +332,7 @@ def load_data(use_cache: bool = True):
 if analyze_btn or st.session_state.data_loaded:
     if not st.session_state.data_loaded:
         with st.spinner("正在拉取并分析数据..."):
-            load_data(use_cache=use_cache)
+            load_data(selected_date, use_cache=use_cache)
         st.session_state.data_loaded = True
 
     # ── 执行分析 ──────────────────────────────────────────
@@ -341,14 +358,15 @@ if analyze_btn or st.session_state.data_loaded:
     display_name = entity_name or f"ID: {entity_id}"
     if _ticker:
         display_name = f"{display_name} <{_ticker}>"
-    render_title(display_name)
+    date_label = selected_date.strftime("%Y-%m-%d")
+    render_title(f"{date_label} {display_name}")
 
     st.markdown(
-        f"<script>document.title = 'EVE {entity_type or '军团'}击杀日报：{display_name}';</script>",
+        f"<script>document.title = 'EVE {entity_type or '军团'}击杀日报：{date_label} {display_name}';</script>",
         unsafe_allow_html=True,
     )
 
-    analysis = analyze_entity_yesterday(entity_id, entity_type=entity_type or "corporation")
+    analysis = analyze_entity_yesterday(entity_id, entity_type=entity_type or "corporation", target_date=selected_date)
 
     if not analysis.has_data:
         st.warning(f"😴 **{display_name}** 昨日没有击杀/损失记录，或数据尚未拉取。")

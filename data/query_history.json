@@ -1,15 +1,15 @@
 [
   {
-    "id": 1900696668,
-    "name": "The Initiative. <INIT.> <INIT.>",
-    "type": "alliance",
-    "ticker": "INIT."
-  },
-  {
     "id": 99009163,
     "name": "Dracarys. <D.C>",
     "type": "alliance",
     "ticker": "D.C"
+  },
+  {
+    "id": 1900696668,
+    "name": "The Initiative. <INIT.> <INIT.>",
+    "type": "alliance",
+    "ticker": "INIT."
   },
   {
     "id": 99012019,

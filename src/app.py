@@ -145,8 +145,8 @@ with st.sidebar:
         selected_date = st.date_input(
             "📅 选择日期",
             value=st.session_state.selected_date,
-            max_value=today - timedelta(days=1),
-            help="选择要分析的日期（默认昨天）",
+            max_value=today,
+            help="选择要分析的日期",
         )
 
     if selected_date != st.session_state.selected_date or report_type != st.session_state._report_type:
@@ -363,12 +363,13 @@ def load_data(date_from, date_to, status):
             status.update(label="✅ 数据加载完成（缓存有效）", state="complete")
             return True
 
-    # 计算回溯秒数：从当前时间倒退到查询起点 + 1 天缓冲
+    # 计算回溯秒数：向上取整到天的整倍数（避免 zKillboard 某些秒数返回空的 bug）
     start_dt = datetime.fromisoformat(date_from)
     if start_dt.tzinfo is None:
         start_dt = start_dt.replace(tzinfo=timezone.utc)
     now = datetime.now(timezone.utc)
-    _past_sec = int((now - start_dt).total_seconds()) + 86400  # 多拉 1 天保底
+    _past_sec = int((now - start_dt).total_seconds()) + 86400
+    _past_sec = ((_past_sec + 86399) // 86400) * 86400  # 向上取整到天的整倍数
     if _past_sec > 604800:
         _past_sec = 604800
 

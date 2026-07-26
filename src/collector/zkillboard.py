@@ -297,24 +297,22 @@ def _enrich_killmail_names(kills: list[dict]) -> list[dict]:
 
 def get_corporation_kills(
     corporation_id: int,
-    start_time: int,
-    end_time: int,
+    past_seconds: int = 86400,
     page: int = 1,
 ) -> list[dict]:
-    """获取指定军团在指定时间范围内的一页击杀数据。
+    """获取指定军团在最近 N 秒内的一页击杀数据。
 
     zKillboard API 每页最多返回 200 条，通过 page 路径参数翻页。
 
     Args:
         corporation_id: 军团 ID
-        start_time: 开始时间（Unix 时间戳）
-        end_time: 结束时间（Unix 时间戳）
+        past_seconds: 回溯秒数，默认 86400（1 天）
         page: 页码，从 1 开始
 
     Returns:
         击杀详情字典列表
     """
-    path = f"corporationID/{corporation_id}/startTime/{start_time}/endTime/{end_time}/page/{page}/"
+    path = f"corporationID/{corporation_id}/pastSeconds/{past_seconds}/page/{page}/"
     data = _request(path)
 
     if isinstance(data, list):
@@ -328,12 +326,11 @@ def get_corporation_kills(
 
 def get_alliance_kills(
     alliance_id: int,
-    start_time: int,
-    end_time: int,
+    past_seconds: int = 86400,
     page: int = 1,
 ) -> list[dict]:
-    """获取指定联盟在指定时间范围内的一页击杀数据。"""
-    path = f"allianceID/{alliance_id}/startTime/{start_time}/endTime/{end_time}/page/{page}/"
+    """获取指定联盟在最近 N 秒内的一页击杀数据。"""
+    path = f"allianceID/{alliance_id}/pastSeconds/{past_seconds}/page/{page}/"
     data = _request(path)
 
     if isinstance(data, list):
@@ -385,27 +382,25 @@ def search_entities(query: str, limit: int = 10) -> dict:
     return result
 
 
-def fetch_entity_kills_by_range(
+def fetch_entity_kills(
     entity_id: int,
-    entity_type: str,
-    start_time: int,
-    end_time: int,
+    entity_type: str = "corporation",
     on_progress: Optional[callable] = None,
+    past_seconds: int = 86400,
 ) -> tuple[list[dict], bool]:
-    """拉取军团/联盟在指定时间戳范围内的击杀数据（自动翻页），返回数据和完整性标志。
+    """拉取军团/联盟在最近 N 秒内的击杀数据（自动翻页），返回数据和完整性标志。
 
     zKillboard 每页最多 200 条，自动逐页拉取直到无数据。
-    如果最后一页不足 200 条，标记为 complete=True，否则为 False。
+    如果最后一页不足 200 条，标记为 complete=True。
 
     Args:
         entity_id: ID
         entity_type: "corporation" 或 "alliance"
-        start_time: 开始时间（Unix 时间戳）
-        end_time: 结束时间（Unix 时间戳）
         on_progress: 进度回调 (page, items_in_page)
+        past_seconds: 回溯秒数，默认 86400（1 天），最大 604800（7 天）
 
     Returns:
-        (results, complete) — results 为击杀详情列表，complete 表示是否拉完整
+        (results, complete)
     """
     get_fn = get_alliance_kills if entity_type == "alliance" else get_corporation_kills
 
@@ -414,7 +409,7 @@ def fetch_entity_kills_by_range(
     complete = True
     while True:
         try:
-            kills = get_fn(entity_id, start_time=start_time, end_time=end_time, page=page)
+            kills = get_fn(entity_id, past_seconds=past_seconds, page=page)
         except RuntimeError:
             complete = False
             break
@@ -427,7 +422,7 @@ def fetch_entity_kills_by_range(
             on_progress(page, len(kills))
 
         if len(kills) < 200:
-            break  # 不足 200 说明是最后一页
+            break
         page += 1
 
     if not all_kills:
@@ -438,7 +433,6 @@ def fetch_entity_kills_by_range(
     if on_progress:
         on_progress(page, 0)
 
-    # 批量解析名称和星域
     all_kills = _enrich_killmail_names(all_kills)
     all_kills = _enrich_system_regions(all_kills)
 
@@ -447,7 +441,6 @@ def fetch_entity_kills_by_range(
         km_id = km.get("killmail_id")
         if not km_id:
             continue
-
         result = {
             "killmail": km,
             "attackers": km.get("attackers", []),

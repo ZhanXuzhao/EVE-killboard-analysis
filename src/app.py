@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta, timezone
 
 from src.storage.database import init_db
-from src.collector.zkillboard import fetch_entity_kills_by_range, search_entities
+from src.collector.zkillboard import fetch_entity_kills, search_entities
 from src.storage.repository import save_killmail, has_killmail, is_cache_valid, upsert_fetch_log
 from src.analysis.corp_analysis import analyze_entity_yesterday, _get_date_range
 
@@ -363,11 +363,9 @@ def load_data(date_from, date_to, status):
             status.update(label="✅ 数据加载完成（缓存有效）", state="complete")
             return True
 
-    # 计算 Unix 时间戳
+    # 计算回溯秒数
     start_dt = datetime.fromisoformat(date_from)
     end_dt = datetime.fromisoformat(date_to)
-    start_ts = int(start_dt.timestamp())
-    end_ts = int(end_dt.timestamp())
 
     # 步骤 2: 拉取击杀列表
     with _step_timer(status, 2, total, "从 zKillboard 拉取击杀列表"):
@@ -375,9 +373,16 @@ def load_data(date_from, date_to, status):
             if items_in_page > 0:
                 status.write(f"   ↳ 第 {page} 页（{items_in_page} 条）")
         try:
-            results, complete = fetch_entity_kills_by_range(
+            # pastSeconds 最大 7 天
+            _range_days = (end_dt - start_dt).days
+            _past_sec = max(86400, (_range_days + 1) * 86400)
+            if _past_sec > 604800:
+                status.write("❌ zKillboard API 最多只能查询最近 7 天的数据")
+                status.update(label="❌ 数据超限", state="error")
+                return False
+            results, complete = fetch_entity_kills(
                 entity_id, etype,
-                start_time=start_ts, end_time=end_ts,
+                past_seconds=_past_sec,
                 on_progress=on_progress,
             )
         except RuntimeError as e:

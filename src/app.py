@@ -364,7 +364,8 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
 
     st.subheader("📈 击杀时间分布")
     if "hourly_timeline" in dfs:
-        df = dfs["hourly_timeline"]
+        df = dfs["hourly_timeline"].copy()
+        df["isk_label"] = df["total_isk"].apply(_fmt)
         fig = px.bar(
             df,
             x="hour",
@@ -372,7 +373,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
             labels={"hour": "小时 (UTC)", "kills": "击杀数"},
             color="total_isk",
             color_continuous_scale="Reds",
-            hover_data={"total_isk": ":,.0f"},
+            hover_data={"total_isk": False, "isk_label": True},
         )
         fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
         fig.update_xaxes(dtick=2)
@@ -387,7 +388,8 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
     with col1:
         st.subheader("🌍 星域热区 Top 10")
         if "region_hotspots" in dfs:
-            df = dfs["region_hotspots"]
+            df = dfs["region_hotspots"].copy()
+            df["isk_label"] = df["total_isk"].apply(_fmt)
             fig = px.bar(
                 df.head(10).iloc[::-1],
                 x="kills",
@@ -397,6 +399,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 color="total_isk",
                 color_continuous_scale="Reds",
                 text="kills",
+                hover_data={"total_isk": False, "isk_label": True},
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
             fig.update_traces(textposition="outside")
@@ -407,7 +410,8 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
     with col2:
         st.subheader("🗺️ 星系热区 Top 10")
         if "system_hotspots" in dfs:
-            df = dfs["system_hotspots"]
+            df = dfs["system_hotspots"].copy()
+            df["isk_label"] = df["total_isk"].apply(_fmt)
             df["display"] = df.apply(
                 lambda r: f"{r['solar_system_name']} ({r['kills']})",
                 axis=1,
@@ -421,6 +425,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 color="total_isk",
                 color_continuous_scale="Reds",
                 text="kills",
+                hover_data={"total_isk": False, "isk_label": True},
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
             fig.update_traces(textposition="outside")
@@ -435,7 +440,8 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
     with col1:
         st.subheader("⚔️ 击杀最多的联盟")
         if "top_killed_alliances" in dfs:
-            df = dfs["top_killed_alliances"]
+            df = dfs["top_killed_alliances"].copy()
+            df["isk_label"] = df["total_isk"].apply(_fmt)
             df["display"] = df.apply(
                 lambda r: f"{r['victim_alliance_name']} ({r['kills']})", axis=1
             )
@@ -448,6 +454,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 color="total_isk",
                 color_continuous_scale="Reds",
                 text="kills",
+                hover_data={"total_isk": False, "isk_label": True},
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
             fig.update_traces(textposition="outside")
@@ -458,7 +465,8 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
     with col2:
         st.subheader("🛡️ 击杀我们最多的联盟")
         if "top_attacker_alliances" in dfs:
-            df = dfs["top_attacker_alliances"]
+            df = dfs["top_attacker_alliances"].copy()
+            df["isk_label"] = df["total_isk"].apply(_fmt)
             df["display"] = df.apply(
                 lambda r: f"{r['alliance_name']} ({r['kills']})", axis=1
             )
@@ -471,6 +479,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 color="total_isk",
                 color_continuous_scale="Reds",
                 text="kills",
+                hover_data={"total_isk": False, "isk_label": True},
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
             fig.update_traces(textposition="outside")
@@ -485,7 +494,8 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
     with col1:
         st.subheader("🚢 击杀用舰船 Top 10")
         if "top_kill_ships" in dfs:
-            df = dfs["top_kill_ships"]
+            df = dfs["top_kill_ships"].copy()
+            df["isk_label"] = df["total_isk"].apply(_fmt)
             df["display"] = df.apply(
                 lambda r: f"{r['ship_name']} ({r['count']})", axis=1
             )
@@ -498,6 +508,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 color="total_isk",
                 color_continuous_scale="Reds",
                 text="count",
+                hover_data={"total_isk": False, "isk_label": True},
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
             fig.update_traces(textposition="outside")
@@ -508,7 +519,8 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
     with col2:
         st.subheader("💀 被击毁舰船 Top 10")
         if "top_loss_ships" in dfs:
-            df = dfs["top_loss_ships"]
+            df = dfs["top_loss_ships"].copy()
+            df["isk_label"] = df["total_isk"].apply(_fmt)
             df["display"] = df.apply(
                 lambda r: f"{r['victim_ship_name']} ({r['count']})", axis=1
             )
@@ -521,6 +533,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 color="total_isk",
                 color_continuous_scale="Reds",
                 text="count",
+                hover_data={"total_isk": False, "isk_label": True},
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
             fig.update_traces(textposition="outside")

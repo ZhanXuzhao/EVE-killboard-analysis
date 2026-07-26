@@ -65,7 +65,17 @@ with st.sidebar:
     # ── 查询历史（输入框上方） ──────────────────────────
 
     if "query_history" not in st.session_state:
-        st.session_state.query_history = []
+        # 从本地文件加载持久化的查询历史
+        _hist_file = Path(__file__).resolve().parent.parent / "data" / "query_history.json"
+        if _hist_file.exists():
+            try:
+                import json
+                with open(_hist_file, encoding="utf-8") as _f:
+                    st.session_state.query_history = json.load(_f)
+            except Exception:
+                st.session_state.query_history = []
+        else:
+            st.session_state.query_history = []
 
     if st.session_state.query_history:
         st.markdown("**📜 最近查询**")
@@ -80,6 +90,7 @@ with st.sidebar:
                     st.session_state.data_loaded = False
                     st.session_state._last_input = str(h["id"])
                     st.session_state._history_click = True
+                    st.session_state._history_trigger = True
 
     # ── 初始化 session_state ──────────────────────────
 
@@ -241,6 +252,10 @@ entity_id = st.session_state.entity_id
 entity_name = st.session_state.entity_name
 entity_type = st.session_state.entity_type
 
+# 点击最近查询记录 → 直接触发分析
+if st.session_state.pop("_history_trigger", False):
+    analyze_btn = True
+
 if entity_id is None:
     st.info("👈 请在左侧输入军团名称或 ID")
     st.stop()
@@ -325,6 +340,14 @@ if analyze_btn or st.session_state.data_loaded:
     _history[:] = [h for h in _history if not (h["id"] == entity_id and h["type"] == (entity_type or "corporation"))]
     _history.insert(0, _entry)
     st.session_state.query_history = _history[:10]  # 最多保留 10 条
+    # 持久化到本地文件
+    try:
+        import json
+        _hist_file = Path(__file__).resolve().parent.parent / "data" / "query_history.json"
+        with open(_hist_file, "w", encoding="utf-8") as _f:
+            json.dump(st.session_state.query_history, _f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
     dfs = analysis.to_dataframes()
     stats = analysis.stats

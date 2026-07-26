@@ -98,7 +98,39 @@ streamlit run src/app.py
 
 ---
 
-## 📖 使用指南
+## � 打包为独立 exe（无需 Python 环境）
+
+可以将此项目打包成一个 **独立的 exe 文件包**，发给没有 Python 的同事/朋友直接使用。
+
+### 打包方法
+
+```bash
+# 1. 确保已安装依赖
+pip install -r requirements.txt
+
+# 2. 一键打包（推荐）
+双击 build_exe.bat
+# 或
+python build_exe.py
+
+# 打包完成后输出到 dist/EVE-Killboard-Analysis/
+```
+
+### 使用打包后的 exe
+
+1. 进入 `dist/EVE-Killboard-Analysis/` 目录
+2. **双击 `EVE-Killboard-Analysis.exe`**
+3. 程序会自动启动 Streamlit 服务器并打开浏览器
+4. 关闭命令行窗口即可停止程序
+
+### 给他人分发
+
+直接把 **整个** `dist/EVE-Killboard-Analysis/` 文件夹压缩打包发给别人即可。
+
+> ⚠️ 接收方无需安装 Python，双击 exe 就能用。
+> 首次启动可能稍慢（Streamlit 初始化），请耐心等待几秒。
+
+---
 
 ### 基本用法
 

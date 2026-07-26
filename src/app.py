@@ -131,7 +131,7 @@ with st.sidebar:
 
     today = datetime.now(timezone.utc).date()
     if "selected_date" not in st.session_state:
-        st.session_state.selected_date = today
+        st.session_state.selected_date = today - timedelta(days=1)
     if "_report_type" not in st.session_state:
         st.session_state._report_type = "daily"
 
@@ -145,8 +145,8 @@ with st.sidebar:
         selected_date = st.date_input(
             "📅 选择日期",
             value=st.session_state.selected_date,
-            max_value=today,
-            help="选择要分析的日期",
+            max_value=today - timedelta(days=1),
+            help="选择要分析的日期（默认昨天）",
         )
 
     if selected_date != st.session_state.selected_date or report_type != st.session_state._report_type:

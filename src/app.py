@@ -391,7 +391,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 axis=1,
             )
             fig = px.bar(
-                df.head(10),
+                df.head(10).iloc[::-1],
                 x="kills",
                 y="display",
                 orientation="h",
@@ -412,7 +412,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
     if "region_hotspots" in dfs:
         df = dfs["region_hotspots"]
         fig = px.bar(
-            df.head(10),
+            df.head(10).iloc[::-1],
             x="kills",
             y="solar_system_region_name",
             orientation="h",
@@ -439,7 +439,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 lambda r: f"{r['ship_name']} ({r['count']})", axis=1
             )
             fig = px.bar(
-                df.head(10),
+                df.head(10).iloc[::-1],
                 x="count",
                 y="display",
                 orientation="h",
@@ -462,7 +462,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 lambda r: f"{r['victim_ship_name']} ({r['count']})", axis=1
             )
             fig = px.bar(
-                df.head(10),
+                df.head(10).iloc[::-1],
                 x="count",
                 y="display",
                 orientation="h",
@@ -523,7 +523,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 lambda r: f"{r['victim_alliance_name']} ({r['kills']})", axis=1
             )
             fig = px.bar(
-                df.head(10),
+                df.head(10).iloc[::-1],
                 x="kills",
                 y="display",
                 orientation="h",
@@ -546,7 +546,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 lambda r: f"{r['alliance_name']} ({r['kills']})", axis=1
             )
             fig = px.bar(
-                df.head(10),
+                df.head(10).iloc[::-1],
                 x="kills",
                 y="display",
                 orientation="h",

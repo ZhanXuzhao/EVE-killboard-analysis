@@ -16,9 +16,6 @@ DB_PATH = DATA_DIR / "killboard.db"
 # zKillboard API 基础 URL
 ZKILLBOARD_BASE_URL = "https://zkillboard.com/api"
 
-# 请求间隔（秒）- 避免被限流
-REQUEST_INTERVAL = 0.5
-
 # HTTP 请求超时（秒）
 REQUEST_TIMEOUT = 30
 

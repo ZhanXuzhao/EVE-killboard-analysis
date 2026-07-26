@@ -300,30 +300,28 @@ def _enrich_killmail_names(kills: list[dict]) -> list[dict]:
 def get_corporation_kills(
     corporation_id: int,
     past_seconds: int = 86400,
-    limit: int = 200,
+    page: int = 1,
 ) -> list[dict]:
-    """获取指定军团在最近 N 秒内的击杀数据。
+    """获取指定军团在最近 N 秒内的一页击杀数据。
 
-    ⚠️ zKillboard 新版 API 直接返回完整的击杀详情（含攻击者、物品等），
-       无需再单独调用 killID 接口。
+    zKillboard API 每页最多返回 200 条，通过 page 路径参数翻页。
 
     Args:
         corporation_id: 军团 ID
         past_seconds: 回溯秒数，默认 86400（1 天）
-        limit: 最大返回条数
+        page: 页码，从 1 开始
 
     Returns:
-        击杀详情字典列表，每条含 killmail, attackers, victim, items 等
+        击杀详情字典列表
     """
-    path = f"corporationID/{corporation_id}/pastSeconds/{past_seconds}/"
-    data = _request(path, params={"limit": limit})
+    path = f"corporationID/{corporation_id}/pastSeconds/{past_seconds}/page/{page}/"
+    data = _request(path)
 
     if data is None:
         return []
 
     if isinstance(data, list):
-        # 新版 API 直接返回完整击杀对象数组
-        return data[:limit]
+        return data
 
     if isinstance(data, dict) and "error" in data:
         logger.warning(f"API 返回错误: {data['error']}")
@@ -335,17 +333,17 @@ def get_corporation_kills(
 def get_alliance_kills(
     alliance_id: int,
     past_seconds: int = 86400,
-    limit: int = 200,
+    page: int = 1,
 ) -> list[dict]:
-    """获取指定联盟在最近 N 秒内的击杀数据。"""
-    path = f"allianceID/{alliance_id}/pastSeconds/{past_seconds}/"
-    data = _request(path, params={"limit": limit})
+    """获取指定联盟在最近 N 秒内的一页击杀数据。"""
+    path = f"allianceID/{alliance_id}/pastSeconds/{past_seconds}/page/{page}/"
+    data = _request(path)
 
     if data is None:
         return []
 
     if isinstance(data, list):
-        return data[:limit]
+        return data
 
     if isinstance(data, dict) and "error" in data:
         logger.warning(f"API 返回错误: {data['error']}")
@@ -399,35 +397,49 @@ def fetch_entity_yesterday_kills(
     entity_type: str = "corporation",
     on_progress: Optional[callable] = None,
 ) -> list[dict]:
-    """拉取军团或联盟前一天的完整击杀数据。
+    """拉取军团或联盟前一天的完整击杀数据（自动翻页）。
+
+    zKillboard 每页最多 200 条，自动逐页拉取直到无数据。
 
     Args:
         entity_id: ID
         entity_type: "corporation" 或 "alliance"
-        on_progress: 进度回调
+        on_progress: 进度回调 (current, total)
 
     Returns:
         击杀详情字典列表
     """
-    if on_progress:
-        on_progress(0, 1)
+    get_fn = get_alliance_kills if entity_type == "alliance" else get_corporation_kills
 
-    if entity_type == "alliance":
-        kills = get_alliance_kills(entity_id, past_seconds=86400)
-    else:
-        kills = get_corporation_kills(entity_id, past_seconds=86400)
+    all_kills = []
+    page = 1
+    while True:
+        if on_progress:
+            on_progress(page - 1, page)  # 显示当前页
 
-    if not kills:
+        kills = get_fn(entity_id, past_seconds=86400, page=page)
+        if not kills:
+            break
+
+        all_kills.extend(kills)
+        if len(kills) < 200:
+            break  # 不足 200 说明是最后一页
+        page += 1
+
+    if not all_kills:
         if on_progress:
             on_progress(1, 1)
         return []
 
-    kills = _enrich_killmail_names(kills)
-    kills = _enrich_system_regions(kills)
-    kills = _enrich_system_regions(kills)
+    if on_progress:
+        on_progress(1, 1)
+
+    # 批量解析名称和星域
+    all_kills = _enrich_killmail_names(all_kills)
+    all_kills = _enrich_system_regions(all_kills)
 
     results = []
-    for km in kills:
+    for km in all_kills:
         km_id = km.get("killmail_id")
         if not km_id:
             continue

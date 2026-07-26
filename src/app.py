@@ -340,6 +340,27 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
         else:
             st.info("暂无星系数据")
 
+    # ── 星域热区 ────────────────────────────────────────
+
+    st.subheader("🌍 星域热区 Top 10")
+    if "region_hotspots" in dfs:
+        df = dfs["region_hotspots"]
+        fig = px.bar(
+            df.head(10),
+            x="kills",
+            y="solar_system_region_name",
+            orientation="h",
+            labels={"kills": "击杀数", "solar_system_region_name": "星域"},
+            color="total_isk",
+            color_continuous_scale="Viridis",
+            text="kills",
+        )
+        fig.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20))
+        fig.update_traces(textposition="outside")
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.info("暂无星域数据")
+
     # ── 第二行：双图表 ───────────────────────────────────
 
     col1, col2 = st.columns(2)

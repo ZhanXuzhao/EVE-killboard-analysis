@@ -18,20 +18,21 @@ def save_killmail(killmail: dict, attackers: list[dict], items: list[dict]):
             """
             INSERT OR IGNORE INTO killmails (
                 killmail_id, killmail_time,
-                solar_system_id, solar_system_name, war_id,
+                solar_system_id, solar_system_name, solar_system_region_name, war_id,
                 victim_character_id, victim_character_name,
                 victim_corporation_id, victim_corporation_name,
                 victim_alliance_id, victim_alliance_name,
                 victim_ship_type_id, victim_ship_name,
                 victim_damage_taken,
                 isk_destroyed, total_attackers, npc_kill
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 killmail["killmail_id"],
                 killmail["killmail_time"],
                 killmail.get("solar_system_id"),
                 killmail.get("solar_system_name"),
+                killmail.get("solar_system_region_name"),
                 killmail.get("war_id"),
                 victim.get("character_id"),
                 victim.get("character_name"),
@@ -320,6 +321,31 @@ def query_top_victims(corp_id: int, date_from: str, date_to: str, limit: int = 1
               AND k.npc_kill = 0
             GROUP BY k.victim_character_id
             ORDER BY count DESC
+            LIMIT ?
+            """,
+            (date_from, date_to, corp_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def query_region_hotspots(corp_id: int, date_from: str, date_to: str, limit: int = 10) -> list[dict]:
+    """星域热区 — 击杀发生最多的星域。"""
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT k.solar_system_region_name,
+                   COUNT(DISTINCT k.killmail_id) AS kills,
+                   COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
+            FROM killmails k
+            WHERE k.killmail_time >= ? AND k.killmail_time < ?
+              AND EXISTS (
+                  SELECT 1 FROM attackers a
+                  WHERE a.killmail_id = k.killmail_id AND a.corporation_id = ?
+              )
+              AND k.npc_kill = 0
+              AND k.solar_system_region_name IS NOT NULL
+            GROUP BY k.solar_system_region_name
+            ORDER BY kills DESC
             LIMIT ?
             """,
             (date_from, date_to, corp_id, limit),

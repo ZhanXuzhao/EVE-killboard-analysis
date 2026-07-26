@@ -37,6 +37,7 @@ def init_db():
                 killmail_time        TEXT NOT NULL,
                 solar_system_id      INTEGER,
                 solar_system_name    TEXT,
+                solar_system_region_name TEXT,
                 war_id               INTEGER,
 
                 victim_character_id   INTEGER,
@@ -89,3 +90,10 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_attacker_km   ON attackers(killmail_id);
             CREATE INDEX IF NOT EXISTS idx_items_km      ON items(killmail_id);
         """)
+
+        # 兼容旧数据库：新增列
+        for col in ["solar_system_region_name"]:
+            try:
+                conn.execute(f"ALTER TABLE killmails ADD COLUMN {col} TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在

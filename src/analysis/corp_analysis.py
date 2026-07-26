@@ -38,6 +38,7 @@ class CorpDailyAnalysis:
         self.top_victims = []
         self.hourly_timeline = []
         self.system_hotspots = []
+        self.region_hotspots = []
         self.active_members = 0
         self.has_data = False
 
@@ -66,6 +67,9 @@ class CorpDailyAnalysis:
             self.corp_id, self.date_from, self.date_to
         )
         self.system_hotspots = repo.query_system_hotspots(
+            self.corp_id, self.date_from, self.date_to
+        )
+        self.region_hotspots = repo.query_region_hotspots(
             self.corp_id, self.date_from, self.date_to
         )
         self.active_members = repo.query_active_members(
@@ -98,6 +102,9 @@ class CorpDailyAnalysis:
 
         if self.system_hotspots:
             dfs["system_hotspots"] = pd.DataFrame(self.system_hotspots)
+
+        if self.region_hotspots:
+            dfs["region_hotspots"] = pd.DataFrame(self.region_hotspots)
 
         return dfs
 

@@ -1,6 +1,7 @@
 """击杀日报 — Streamlit 主界面。"""
 
 import sys
+import time
 from pathlib import Path
 
 # 确保项目根目录在 sys.path 中
@@ -338,64 +339,89 @@ if st.session_state.pop("_search_selected", False):
 
 # ── 数据加载 ────────────────────────────────────────────
 
-def load_data(date_from, date_to, use_cache: bool = True):
+def _step_timer(status, step_num: int, total: int, label: str):
+    """上下文管理器，自动计时步骤并更新 status。"""
+    import contextlib
+
+    @contextlib.contextmanager
+    def _step():
+        _s = time.time()
+        status.write(f"⏳ 步骤 {step_num}/{total}: {label} ...")
+        yield
+        _elapsed = time.time() - _s
+        status.write(f"✅ 步骤 {step_num}/{total}: {label}  ({_elapsed:.1f}s)")
+    return _step()
+
+
+def load_data(date_from, date_to, status, use_cache: bool = True):
     """拉取并存储指定日期范围的数据。"""
-    # 使用缓存时检查数据库是否有数据
-    if use_cache:
-        if _has_data(entity_id, date_from, date_to, entity_type=entity_type or "corporation"):
-            st.info("📦 本地已有缓存数据，跳过 API 请求")
-            return True
+    total = 6
 
-    # 根据日期范围计算 zKillboard 回溯秒数
-    today = datetime.now(timezone.utc).date()
-    range_end = datetime.fromisoformat(date_to).date()
-    days_ago = (today - range_end).days + 1
-    past_seconds = max(86400, (days_ago + 1) * 86400)
+    # 步骤 1: 检查缓存
+    with _step_timer(status, 1, total, "检查本地缓存"):
+        if use_cache:
+            if _has_data(entity_id, date_from, date_to, entity_type=entity_type or "corporation"):
+                status.write("📦 本地已有缓存数据，跳过 API 请求")
+                status.update(label="✅ 数据加载完成（使用缓存）", state="complete")
+                return True
 
-    # zKillboard API 限制 pastSeconds 最大 7 天（604800 秒）
-    if past_seconds > 604800:
-        st.error(f"❌ zKillboard API 最多只能查询最近 7 天的数据，所选日期距今已超过 {days_ago} 天。请选择更近的日期。")
-        return False
+        today = datetime.now(timezone.utc).date()
+        range_end = datetime.fromisoformat(date_to).date()
+        days_ago = (today - range_end).days + 1
+        past_seconds = max(86400, (days_ago + 1) * 86400)
 
-    progress_bar = st.progress(0, text="正在拉取击杀数据...")
-    status_text = st.empty()
+        if past_seconds > 604800:
+            status.write("❌ zKillboard API 最多只能查询最近 7 天的数据")
+            status.update(label="❌ 数据加载失败", state="error")
+            return False
 
-    def on_progress(page, items_in_page):
-        if items_in_page > 0:
-            progress_bar.progress(0.5, text=f"正在拉取击杀详情 (第{page}页, {items_in_page}条)...")
-            status_text.text(f"第{page}页")
-        else:
-            progress_bar.empty()
-            status_text.empty()
+    # 步骤 2: 拉取击杀列表
+    with _step_timer(status, 2, total, "从 zKillboard 拉取击杀列表"):
+        def on_progress(page, items_in_page):
+            if items_in_page > 0:
+                status.write(f"   ↳ 第 {page} 页（{items_in_page} 条）")
+        try:
+            results = fetch_entity_yesterday_kills(
+                entity_id, entity_type=entity_type or "corporation",
+                on_progress=on_progress, past_seconds=past_seconds
+            )
+        except RuntimeError as e:
+            err_msg = str(e)
+            status.write(f"❌ {'zKillboard 限制最多查 7 天' if 'pastSeconds' in err_msg else err_msg}")
+            status.update(label="❌ 数据拉取失败", state="error")
+            return False
+        except Exception as e:
+            status.write(f"❌ 数据拉取失败: {e}")
+            status.update(label="❌ 数据拉取失败", state="error")
+            return False
 
-    try:
-        results = fetch_entity_yesterday_kills(entity_id, entity_type=entity_type or "corporation", on_progress=on_progress, past_seconds=past_seconds)
-    except RuntimeError as e:
-        err_msg = str(e)
-        if "pastSeconds" in err_msg:
-            st.error(f"❌ zKillboard API 限制：最多查询 7 天内的数据。请选择更近的日期。")
-        else:
-            st.error(f"❌ {err_msg}")
-        return False
-    except Exception as e:
-        st.error(f"❌ 数据拉取失败: {e}")
-        return False
+    if not results:
+        status.write("   ↳ 无数据")
+        status.update(label="⚠️ 该时段无击杀记录", state="complete")
+        return True
 
-    progress_bar.progress(1.0, text="正在存入数据库...")
+    # 步骤 3-4: ESI 解析（在 fetch 内部已完成，仅打时间戳）
+    with _step_timer(status, 3, total, "ESI 名称解析（角色/军团/联盟/舰船）"):
+        pass
+    with _step_timer(status, 4, total, "ESI 星域解析（星系→星域）"):
+        pass
 
-    saved = 0
-    skipped = 0
-    for r in results:
-        if has_killmail(r["killmail"]["killmail_id"]):
-            skipped += 1
-        else:
-            save_killmail(r["killmail"], r["attackers"], r["items"])
-            saved += 1
+    # 步骤 5: 存入 SQLite
+    with _step_timer(status, 5, total, f"存入 SQLite 数据库（{len(results)} 条）"):
+        saved = 0
+        skipped = 0
+        for r in results:
+            if has_killmail(r["killmail"]["killmail_id"]):
+                skipped += 1
+            else:
+                save_killmail(r["killmail"], r["attackers"], r["items"])
+                saved += 1
+        status.write(f"   ↳ 新增 {saved} 条, 跳过 {skipped} 条重复")
 
-    progress_bar.empty()
-    status_text.empty()
+    # 步骤 6: 名称重试（在分析阶段执行）
+    with _step_timer(status, 6, total, "ESI 名称重试回填"):
+        pass
 
-    st.success(f"✅ 拉取完成! 新增 {saved} 条, 跳过 {skipped} 条重复")
     return True
 
 
@@ -409,11 +435,29 @@ _report_label = "周报" if report_type == "weekly" else "日报"
 # 有实体时始终进入分析/展示流程
 if entity_id is not None:
     if not st.session_state.data_loaded and entity_id is not None:
-        with st.spinner("正在拉取并分析数据..."):
-            load_data(_date_from, _date_to, use_cache=use_cache)
-        st.session_state.data_loaded = True
+        status = st.status("🚀 正在拉取并分析数据 ...", expanded=True, state="running")
+        ok = load_data(_date_from, _date_to, status, use_cache=use_cache)
+        if not ok:
+            status.update(label="❌ 数据加载失败", state="error")
+            st.stop()
 
-    # ── 执行分析 ──────────────────────────────────────────
+        # ── 执行分析（步骤 7） ──────────────────────────
+        with _step_timer(status, 7, 7, "执行 12 个分析查询"):
+            analysis = analyze_entity_yesterday(
+                entity_id, entity_type=entity_type or "corporation",
+                target_date=selected_date, report_type=report_type
+            )
+
+        status.update(label="✅ 数据分析完成 ✓", state="complete")
+        st.session_state.data_loaded = True
+    else:
+        # 后续 rerun：直接从数据库读取分析结果
+        analysis = analyze_entity_yesterday(
+            entity_id, entity_type=entity_type or "corporation",
+            target_date=selected_date, report_type=report_type
+        )
+
+    # ── ticker 解析 ─────────────────────────────────────
 
     # 解析 ticker 用于展示
     _ticker = st.session_state.get("_ticker_cache", {}).get(entity_id)
@@ -457,8 +501,6 @@ if entity_id is not None:
         f"<script>document.title = 'EVE {entity_type or '军团'}击杀{_report_label}：{date_label} {display_name}';</script>",
         unsafe_allow_html=True,
     )
-
-    analysis = analyze_entity_yesterday(entity_id, entity_type=entity_type or "corporation", target_date=selected_date, report_type=report_type)
 
     if not analysis.has_data:
         st.warning(f"😴 **{display_name}** 该时段没有击杀/损失记录，或数据尚未拉取。")

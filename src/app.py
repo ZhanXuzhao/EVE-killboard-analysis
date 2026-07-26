@@ -306,10 +306,13 @@ def load_data(target_date, use_cache: bool = True):
     progress_bar = st.progress(0, text="正在拉取击杀数据...")
     status_text = st.empty()
 
-    def on_progress(current, total):
-        pct = current / total
-        progress_bar.progress(pct, text=f"正在拉取击杀详情 ({current}/{total})...")
-        status_text.text(f"已处理 {current}/{total} 条")
+    def on_progress(page, items_in_page):
+        if items_in_page > 0:
+            progress_bar.progress(0.5, text=f"正在拉取击杀详情 (第{page}页, {items_in_page}条)...")
+            status_text.text(f"第{page}页")
+        else:
+            progress_bar.empty()
+            status_text.empty()
 
     try:
         results = fetch_entity_yesterday_kills(entity_id, entity_type=entity_type or "corporation", on_progress=on_progress, past_seconds=past_seconds)

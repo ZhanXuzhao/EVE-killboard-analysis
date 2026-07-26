@@ -405,7 +405,7 @@ def fetch_entity_yesterday_kills(
     Args:
         entity_id: ID
         entity_type: "corporation" 或 "alliance"
-        on_progress: 进度回调 (current, total)
+        on_progress: 进度回调 (page, total)
         past_seconds: 回溯秒数，默认 86400（1 天）
 
     Returns:
@@ -416,25 +416,25 @@ def fetch_entity_yesterday_kills(
     all_kills = []
     page = 1
     while True:
-        if on_progress:
-            on_progress(page - 1, page)  # 显示当前页
-
         kills = get_fn(entity_id, past_seconds=past_seconds, page=page)
         if not kills:
             break
 
         all_kills.extend(kills)
+        if on_progress:
+            on_progress(page, len(kills))  # 显示当前页和本页条数
+
         if len(kills) < 200:
             break  # 不足 200 说明是最后一页
         page += 1
 
     if not all_kills:
         if on_progress:
-            on_progress(1, 1)
+            on_progress(1, 0)
         return []
 
     if on_progress:
-        on_progress(1, 1)
+        on_progress(page, 0)
 
     # 批量解析名称和星域
     all_kills = _enrich_killmail_names(all_kills)

@@ -1,32 +1,32 @@
 [
   {
+    "id": 1354830081,
+    "name": "Goonswarm Federation <CONDI>",
+    "type": "alliance",
+    "ticker": "CONDI"
+  },
+  {
+    "id": 99012019,
+    "name": "Can i bring my Drake... <-BMD> <-BMD>",
+    "type": "alliance",
+    "ticker": "-BMD"
+  },
+  {
+    "id": 1900696668,
+    "name": "The Initiative. <INIT.> <INIT.> <INIT.>",
+    "type": "alliance",
+    "ticker": "INIT."
+  },
+  {
     "id": 99009163,
     "name": "Dracarys. <D.C>",
     "type": "alliance",
     "ticker": "D.C"
   },
   {
-    "id": 1900696668,
-    "name": "The Initiative. <INIT.> <INIT.>",
-    "type": "alliance",
-    "ticker": "INIT."
-  },
-  {
-    "id": 99012019,
-    "name": "Can i bring my Drake... <-BMD>",
-    "type": "alliance",
-    "ticker": "-BMD"
-  },
-  {
     "id": 99003581,
     "name": "Fraternity. <FRT>",
     "type": "alliance",
     "ticker": "FRT"
-  },
-  {
-    "id": 1354830081,
-    "name": "Goonswarm Federation <CONDI>",
-    "type": "alliance",
-    "ticker": "CONDI"
   }
 ]

@@ -4,11 +4,13 @@ EVE Online 军团与联盟击杀记录查询与分析工具。
 
 基于 **zKillboard API** + **ESI API**，提供军团/联盟的击杀/损失数据拉取、本地缓存、多维度分析与可视化展示。
 
+
 ---
 
 ## 📸 截图
 
-![应用截图](https://img.shields.io/badge/EVE-击杀日报-blue?logo=eve-online)
+[点这里开始体验](https://eve-killboard-analysis-kh7x2vrzkn9wky2ajcrkxn.streamlit.app/)
+
 ![应用截图](images/屏幕截图%202026-07-26%20165811.png)
 ---
 

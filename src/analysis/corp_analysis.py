@@ -69,6 +69,7 @@ class CorpDailyAnalysis:
         self.top_killed_alliances = []
         self.top_attacker_alliances = []
         self.joint_kills_alliances = []
+        self.joint_kills_participants = []
         self.active_members = 0
         self.has_data = False
 
@@ -99,6 +100,7 @@ class CorpDailyAnalysis:
         self.top_killed_alliances = repo.query_top_killed_alliances(eid, self.date_from, self.date_to, entity_type=etype)
         self.top_attacker_alliances = repo.query_top_attacker_alliances(eid, self.date_from, self.date_to, entity_type=etype)
         self.joint_kills_alliances = repo.query_joint_kills_alliances(eid, self.date_from, self.date_to, entity_type=etype)
+        self.joint_kills_participants = repo.query_joint_kills_participants(eid, self.date_from, self.date_to, entity_type=etype)
 
     def to_dataframes(self) -> dict[str, pd.DataFrame]:
         """将分析结果转换为 Pandas DataFrame 字典。"""
@@ -142,6 +144,9 @@ class CorpDailyAnalysis:
 
         if self.joint_kills_alliances:
             dfs["joint_kills_alliances"] = pd.DataFrame(self.joint_kills_alliances)
+
+        if self.joint_kills_participants:
+            dfs["joint_kills_participants"] = pd.DataFrame(self.joint_kills_participants)
 
         return dfs
 

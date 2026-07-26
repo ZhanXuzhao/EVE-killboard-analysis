@@ -18,6 +18,35 @@ from src.collector.zkillboard import fetch_entity_yesterday_kills, search_entiti
 from src.storage.repository import save_killmail, has_killmail
 from src.analysis.corp_analysis import analyze_entity_yesterday, _get_date_range, _has_data
 
+
+def _save_history(entity_id, entity_name, entity_type, ticker=""):
+    """保存查询历史到 session_state 和本地文件。"""
+    _h = st.session_state.get("query_history", [])
+    _h[:] = [x for x in _h if not (x["id"] == entity_id and x.get("type") == (entity_type or "corporation"))]
+    _h.insert(0, {"id": entity_id, "name": entity_name, "type": entity_type or "corporation", "ticker": ticker})
+    st.session_state.query_history = _h[:10]
+    try:
+        import json
+        _hf = Path(__file__).resolve().parent.parent / "data" / "query_history.json"
+        with open(_hf, "w", encoding="utf-8") as _f:
+            json.dump(st.session_state.query_history, _f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+    _debug(f"save_history: {entity_name} <{ticker}> pos=0")
+
+
+# ── Debug 日志 ──────────────────────────────────────────
+
+def _debug(msg: str):
+    """写入调试日志到 session_state。"""
+    if "_debug_logs" not in st.session_state:
+        st.session_state._debug_logs = []
+    st.session_state._debug_logs.append(msg)
+    if len(st.session_state._debug_logs) > 50:
+        st.session_state._debug_logs = st.session_state._debug_logs[-50:]
+
+
+
 # ── 页面配置 ────────────────────────────────────────────
 
 st.set_page_config(
@@ -111,6 +140,7 @@ with st.sidebar:
     if selected_date != st.session_state.selected_date:
         st.session_state.selected_date = selected_date
         st.session_state.data_loaded = False
+        _debug(f"date_change: {selected_date}")
         st.rerun()
 
     # ── 搜索表单（仅按 Enter 或点击按钮时触发） ──────
@@ -118,7 +148,7 @@ with st.sidebar:
     with st.form(key="search_form"):
         corp_input = st.text_input(
             "军团名称 / ID",
-            value=DEFAULT_ENTITY_ID,
+            value=st.session_state.get("_input_value", DEFAULT_ENTITY_ID),
             placeholder="例如: Goonswarm Federation 或 987654321",
             help="输入军团名称（自动搜索）或直接输入数字 ID",
         )
@@ -159,14 +189,7 @@ with st.sidebar:
                     st.session_state.entity_name = str(corp_id_int)
                 st.session_state.entity_id = corp_id_int
                 st.session_state.entity_type = detected_type
-                # 解析并缓存 ticker
-                try:
-                    import requests as _req2
-                    _et = detected_type
-                    _r2 = _req2.get(f"https://esi.evetech.net/latest/{'alliances' if _et == 'alliance' else 'corporations'}/{corp_id_int}/", headers={"User-Agent": "EVE-Killboard-Analysis/1.0"}, timeout=10)
-                    st.session_state._last_ticker = _r2.json().get("ticker", "")
-                except Exception:
-                    st.session_state._last_ticker = ""
+                st.session_state._input_value = str(corp_id_int)
             else:
                 # 文字 → 搜索军团和联盟
                 with st.spinner(f"正在搜索「{corp_input.strip()}」..."):
@@ -195,14 +218,7 @@ with st.sidebar:
                         st.session_state.entity_name = non_sep[0][0].split(" (ID:")[0]
                         st.session_state.entity_type = non_sep[0][2]
                         st.session_state._search_options = None
-                        # 解析并缓存 ticker
-                        try:
-                            import requests as _req2
-                            _et2 = non_sep[0][2]
-                            _r2 = _req2.get(f"https://esi.evetech.net/latest/{'alliances' if _et2 == 'alliance' else 'corporations'}/{non_sep[0][1]}/", headers={"User-Agent": "EVE-Killboard-Analysis/1.0"}, timeout=10)
-                            st.session_state._last_ticker = _r2.json().get("ticker", "")
-                        except Exception:
-                            st.session_state._last_ticker = ""
+                        st.session_state._input_value = str(non_sep[0][1])
                         label = "联盟" if st.session_state.entity_type == "alliance" else "军团"
                         st.success(f"✅ 已匹配 {label}: **{st.session_state.entity_name}**")
                 else:
@@ -225,38 +241,12 @@ with st.sidebar:
                 st.session_state.entity_type = etype
                 st.session_state.data_loaded = False
                 st.session_state._search_selected = True
-                # 解析并缓存 ticker
-                try:
-                    import requests as _req2
-                    _r2 = _req2.get(f"https://esi.evetech.net/latest/{'alliances' if etype == 'alliance' else 'corporations'}/{eid}/", headers={"User-Agent": "EVE-Killboard-Analysis/1.0"}, timeout=10)
-                    st.session_state._last_ticker = _r2.json().get("ticker", "")
-                except Exception:
-                    st.session_state._last_ticker = ""
+                st.session_state._input_value = str(eid)
                 break
 
-    # ── 查询历史（表单后渲染以获取最新 entity） ─────
+    # ── 查询历史（仅渲染按钮，不自动移动） ─────
 
     if st.session_state.query_history:
-        _cur_id = st.session_state.get("entity_id")
-        _cur_name = st.session_state.get("entity_name")
-        if _cur_id and _cur_name:
-            _cur = {"id": _cur_id, "type": st.session_state.get("entity_type", "corporation")}
-            st.session_state.query_history[:] = [
-                h for h in st.session_state.query_history
-                if not (h["id"] == _cur["id"] and h.get("type") == _cur["type"])
-            ]
-            _entry = {"id": _cur["id"], "name": _cur_name,
-                      "type": _cur["type"], "ticker": st.session_state.get("_last_ticker", "")}
-            st.session_state.query_history.insert(0, _entry)
-            st.session_state.query_history = st.session_state.query_history[:10]
-            try:
-                import json
-                _hf = Path(__file__).resolve().parent.parent / "data" / "query_history.json"
-                with open(_hf, "w", encoding="utf-8") as _f:
-                    json.dump(st.session_state.query_history, _f, ensure_ascii=False, indent=2)
-            except Exception:
-                pass
-
         hcol1, hcol2 = st.columns([3, 1])
         with hcol1:
             st.markdown("**📜 最近查询**")
@@ -277,6 +267,9 @@ with st.sidebar:
                     st.session_state._last_input = str(h["id"])
                     st.session_state._history_click = True
                     st.session_state._history_trigger = True
+                    st.session_state._input_value = h.get("ticker", h["name"])
+                    st.session_state._pending_rerun = True
+                    _debug(f"hist_click: {h['name']} <{h.get('ticker','')}>")
 
     st.divider()
     st.markdown("**💡 使用说明**")
@@ -309,6 +302,7 @@ if "auto_triggered" not in st.session_state:
         st.session_state.entity_name = _dname
         st.session_state.entity_type = _dtype
         st.session_state._last_input = DEFAULT_ENTITY_ID
+        st.session_state._input_value = DEFAULT_ENTITY_ID
     if st.session_state.entity_id is not None:
         analyze_btn = True
 
@@ -385,8 +379,8 @@ def load_data(target_date, use_cache: bool = True):
 
 # ── 分析按钮逻辑 ────────────────────────────────────────
 
-# 日期变更或表单提交 → 进入分析流程
-if analyze_btn or not st.session_state.data_loaded:
+# 有实体时始终进入分析/展示流程
+if entity_id is not None:
     if not st.session_state.data_loaded and entity_id is not None:
         with st.spinner("正在拉取并分析数据..."):
             load_data(selected_date, use_cache=use_cache)
@@ -411,7 +405,14 @@ if analyze_btn or not st.session_state.data_loaded:
         _tc = st.session_state.get("_ticker_cache", {})
         _tc[entity_id] = _ticker
         st.session_state._ticker_cache = _tc
+    _debug(f"analysis: ticker={_ticker or ''}, data_loaded={st.session_state.data_loaded}")
     st.session_state._last_ticker = _ticker or ""
+    # 数据加载完成后统一保存历史
+    _save_history(entity_id, entity_name, entity_type, _ticker or "")
+
+    # 历史按钮点击后 rerun 一次，让侧边栏 UI 刷新
+    if st.session_state.pop("_pending_rerun", False):
+        st.rerun()
 
     display_name = entity_name or f"ID: {entity_id}"
     if _ticker:
@@ -430,22 +431,6 @@ if analyze_btn or not st.session_state.data_loaded:
         st.warning(f"😴 **{display_name}** 昨日没有击杀/损失记录，或数据尚未拉取。")
         st.info("💡 取消勾选「使用缓存」可强制从 zKillboard 拉取。")
         st.stop()
-
-    # 记录查询历史
-    _history = st.session_state.query_history
-    _entry = {"id": entity_id, "name": display_name.split(" <")[0], "type": entity_type or "corporation", "ticker": _ticker}
-    # 去重：如果已存在则删除旧记录
-    _history[:] = [h for h in _history if not (h["id"] == entity_id and h["type"] == (entity_type or "corporation"))]
-    _history.insert(0, _entry)
-    st.session_state.query_history = _history[:10]  # 最多保留 10 条
-    # 持久化到本地文件
-    try:
-        import json
-        _hist_file = Path(__file__).resolve().parent.parent / "data" / "query_history.json"
-        with open(_hist_file, "w", encoding="utf-8") as _f:
-            json.dump(st.session_state.query_history, _f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
 
     dfs = analysis.to_dataframes()
     stats = analysis.stats
@@ -734,3 +719,15 @@ if analyze_btn or not st.session_state.data_loaded:
 else:
     render_title()
     st.info("👈 请在左侧输入军团名称或 ID")
+
+# ── Debug 面板 ─────────────────────────────────────────
+
+with st.expander("🐛 Debug Log", expanded=False):
+    _logs = st.session_state.get("_debug_logs", [])
+    if _logs:
+        st.code("\n".join(_logs[-30:]), language="text")
+    else:
+        st.caption("无日志")
+    if st.button("清空日志"):
+        st.session_state._debug_logs = []
+        st.rerun()

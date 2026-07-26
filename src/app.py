@@ -360,30 +360,31 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
             return f"{val / 1_000:.0f}K"
         return f"{val:.0f}"
 
-    # ── 第一行：双图表 ───────────────────────────────────
+    # ── Row 1: 击杀时间分布 ────────────────────────────
+
+    st.subheader("📈 击杀时间分布")
+    if "hourly_timeline" in dfs:
+        df = dfs["hourly_timeline"]
+        fig = px.bar(
+            df,
+            x="hour",
+            y="kills",
+            labels={"hour": "小时 (UTC)", "kills": "击杀数"},
+            color="total_isk",
+            color_continuous_scale="Reds",
+            hover_data={"total_isk": ":,.0f"},
+        )
+        fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
+        fig.update_xaxes(dtick=2)
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.info("暂无时间分布数据")
+
+    # ── Row 2: 星域 + 星系 ─────────────────────────────
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("📈 击杀时间分布")
-        if "hourly_timeline" in dfs:
-            df = dfs["hourly_timeline"]
-            fig = px.bar(
-                df,
-                x="hour",
-                y="kills",
-                labels={"hour": "小时 (UTC)", "kills": "击杀数"},
-                color="total_isk",
-                color_continuous_scale="Reds",
-                hover_data={"total_isk": ":,.0f"},
-            )
-            fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            fig.update_xaxes(dtick=2)
-            st.plotly_chart(fig, width="stretch")
-        else:
-            st.info("暂无时间分布数据")
-
-    with col2:
         st.subheader("🌍 星域热区 Top 10")
         if "region_hotspots" in dfs:
             df = dfs["region_hotspots"]
@@ -403,11 +404,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
         else:
             st.info("暂无星域数据")
 
-    # ── 第二行：星系 + 击杀最多的联盟 ────────────────────
-
-    col1, col2 = st.columns(2)
-
-    with col1:
+    with col2:
         st.subheader("🗺️ 星系热区 Top 10")
         if "system_hotspots" in dfs:
             df = dfs["system_hotspots"]
@@ -431,7 +428,11 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
         else:
             st.info("暂无星系数据")
 
-    with col2:
+    # ── Row 3: 联盟排行 ───────────────────────────────
+
+    col1, col2 = st.columns(2)
+
+    with col1:
         st.subheader("⚔️ 击杀最多的联盟")
         if "top_killed_alliances" in dfs:
             df = dfs["top_killed_alliances"]
@@ -454,7 +455,30 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
         else:
             st.info("暂无数据")
 
-    # ── 第三行：舰船排行 ─────────────────────────────────
+    with col2:
+        st.subheader("🛡️ 击杀我们最多的联盟")
+        if "top_attacker_alliances" in dfs:
+            df = dfs["top_attacker_alliances"]
+            df["display"] = df.apply(
+                lambda r: f"{r['alliance_name']} ({r['kills']})", axis=1
+            )
+            fig = px.bar(
+                df.head(10).iloc[::-1],
+                x="kills",
+                y="display",
+                orientation="h",
+                labels={"kills": "击杀数", "display": "联盟"},
+                color="total_isk",
+                color_continuous_scale="Reds",
+                text="kills",
+            )
+            fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
+            fig.update_traces(textposition="outside")
+            st.plotly_chart(fig, width="stretch")
+        else:
+            st.info("暂无数据")
+
+    # ── Row 4: 舰船排行 ───────────────────────────────
 
     col1, col2 = st.columns(2)
 
@@ -535,30 +559,6 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
         display_df.index.name = "排名"
 
         st.dataframe(display_df, width="stretch")
-    else:
-        st.info("暂无数据")
-
-    # ── 击杀我们最多的联盟 ──────────────────────────────
-
-    st.subheader("🛡️ 击杀我们最多的联盟")
-    if "top_attacker_alliances" in dfs:
-        df = dfs["top_attacker_alliances"]
-        df["display"] = df.apply(
-            lambda r: f"{r['alliance_name']} ({r['kills']})", axis=1
-        )
-        fig = px.bar(
-            df.head(10).iloc[::-1],
-            x="kills",
-            y="display",
-            orientation="h",
-            labels={"kills": "击杀数", "display": "联盟"},
-            color="total_isk",
-            color_continuous_scale="Reds",
-            text="kills",
-        )
-        fig.update_layout(height=350, margin=dict(l=20, r=20, t=20, b=20))
-        fig.update_traces(textposition="outside")
-        st.plotly_chart(fig, width="stretch")
     else:
         st.info("暂无数据")
 

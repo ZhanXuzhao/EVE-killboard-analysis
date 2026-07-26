@@ -275,7 +275,8 @@ def query_hourly_timeline(entity_id: int, date_from: str, date_to: str, entity_t
         rows = conn.execute(
             f"""
             SELECT CAST(STRFTIME('%H', k.killmail_time) AS INTEGER) AS hour,
-                   COUNT(DISTINCT k.killmail_id) AS kills
+                   COUNT(DISTINCT k.killmail_id) AS kills,
+                   COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
             FROM killmails k
             WHERE k.killmail_time >= ? AND k.killmail_time < ?
               AND EXISTS (

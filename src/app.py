@@ -373,8 +373,9 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
                 x="hour",
                 y="kills",
                 labels={"hour": "小时 (UTC)", "kills": "击杀数"},
-                color="kills",
-                color_continuous_scale="Blues",
+                color="total_isk",
+                color_continuous_scale="Reds",
+                hover_data={"total_isk": ":,.0f"},
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
             fig.update_xaxes(dtick=2)

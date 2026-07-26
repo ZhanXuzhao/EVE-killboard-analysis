@@ -520,6 +520,37 @@ def query_top_attacker_alliances(entity_id: int, date_from: str, date_to: str, l
 # ── 联盟分析查询 ────────────────────────────────────────
 
 
+def query_joint_kills_alliances(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
+    """联合击杀 — 统计哪些联盟与本方合作击杀了目标。
+
+    对于本方参与的击杀，查找同一击杀邮件中的其他联盟攻击者，
+    按合作击杀数和总 ISK 排序。
+    """
+    id_col = _id_col(entity_type)
+    with get_db() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT a2.alliance_id,
+                   a2.alliance_name,
+                   COUNT(DISTINCT k.killmail_id) AS joint_kills,
+                   COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
+            FROM killmails k
+            JOIN attackers a1 ON a1.killmail_id = k.killmail_id
+            JOIN attackers a2 ON a2.killmail_id = k.killmail_id
+            WHERE k.killmail_time >= ? AND k.killmail_time < ?
+              AND a1.{id_col} = ?
+              AND a2.alliance_id IS NOT NULL AND a2.alliance_id != 0
+              AND (a2.alliance_id != a1.alliance_id OR a1.alliance_id IS NULL)
+              AND k.npc_kill = 0
+            GROUP BY a2.alliance_id
+            ORDER BY joint_kills DESC
+            LIMIT ?
+            """,
+            (date_from, date_to, entity_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def query_alliance_daily_stats(alliance_id: int, date_from: str, date_to: str) -> dict:
     """联盟昨日击杀/损失汇总统计。"""
     with get_db() as conn:

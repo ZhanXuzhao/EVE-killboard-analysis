@@ -696,7 +696,39 @@ if entity_id is not None:
         else:
             st.info("暂无数据")
 
-    # ── Row 4: 舰船排行 ───────────────────────────────
+    # ── Row 4: 联合击杀 ───────────────────────────────
+
+    st.subheader("🤝 联合击杀（合作联盟 Top）")
+    if "joint_kills_alliances" in dfs:
+        df = dfs["joint_kills_alliances"].copy()
+        df["isk_label"] = df["total_isk"].apply(_fmt)
+        df["display"] = df.apply(
+            lambda r: f"{r['alliance_name']} ({r['joint_kills']})", axis=1
+        )
+        fig = px.bar(
+            df.head(10).iloc[::-1],
+            x="joint_kills",
+            y="display",
+            orientation="h",
+            labels={"joint_kills": "合作击杀数", "display": "联盟"},
+            color="total_isk",
+            color_continuous_scale="Blues",
+            text="joint_kills",
+            hover_data={"total_isk": False, "isk_label": True},
+        )
+        fig.update_layout(
+            height=300,
+            margin=dict(l=20, r=20, t=20, b=20),
+            xaxis_title="联合击杀数",
+        )
+        fig.update_traces(textposition="outside")
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.info("暂无联合击杀数据")
+
+    st.markdown("---")
+
+    # ── Row 5: 舰船排行 ───────────────────────────────
 
     col1, col2 = st.columns(2)
 

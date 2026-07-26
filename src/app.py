@@ -351,7 +351,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
             help="昨日有击杀或损失记录的成员数",
         )
 
-    # ISK 金额格式化辅助
+    # ISK 金额格式化辅助（图表 tooltip 用）
     def fmt_isk(val: float) -> str:
         if val >= 1_000_000_000:
             return f"{val / 1_000_000_000:.2f}B"
@@ -483,15 +483,23 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
     st.subheader("🏆 击杀排行")
     if "top_killers" in dfs:
         df = dfs["top_killers"]
-        df["total_isk_display"] = df["total_isk"].apply(fmt_isk)
-        display_df = df[["character_name", "ship_name", "kills", "total_isk_display"]]
-        display_df.columns = ["角色名", "主要舰船", "击杀数", "总 ISK"]
+        # 保留数值列用于排序，额外加格式化显示列
+        df["isk_display"] = df["total_isk"].apply(
+            lambda v: f"{v/1e9:.2f}B" if v >= 1e9 else f"{v/1e6:.1f}M" if v >= 1e6 else f"{v/1e3:.0f}K" if v >= 1e3 else f"{v:.0f}"
+        )
+        display_df = df[["character_name", "ship_name", "kills", "total_isk", "isk_display"]]
+        display_df.columns = ["角色名", "主要舰船", "击杀数", "总 ISK", "总 ISK (显示)"]
 
-        # 排名列
         display_df.index = range(1, len(display_df) + 1)
         display_df.index.name = "排名"
 
-        st.dataframe(display_df, width="stretch")
+        st.dataframe(
+            display_df[["角色名", "主要舰船", "击杀数", "总 ISK"]],
+            column_config={
+                "总 ISK": st.column_config.NumberColumn("总 ISK", format=",.0f")
+            },
+            width="stretch",
+        )
     else:
         st.info("暂无击杀排行数据")
 
@@ -500,15 +508,20 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
     st.subheader("🎯 常被击杀的目标")
     if "top_victims" in dfs:
         df = dfs["top_victims"]
-        df["total_isk_display"] = df["total_isk"].apply(fmt_isk)
         display_df = df[
-            ["victim_character_name", "victim_corporation_name", "count", "total_isk_display"]
+            ["victim_character_name", "victim_corporation_name", "count", "total_isk"]
         ]
         display_df.columns = ["角色名", "军团", "被击杀次数", "总 ISK"]
         display_df.index = range(1, len(display_df) + 1)
         display_df.index.name = "排名"
 
-        st.dataframe(display_df, width="stretch")
+        st.dataframe(
+            display_df,
+            column_config={
+                "总 ISK": st.column_config.NumberColumn("总 ISK", format=",.0f")
+            },
+            width="stretch",
+        )
     else:
         st.info("暂无数据")
 

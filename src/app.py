@@ -32,8 +32,6 @@ hide_streamlit_style = """
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 .stDeployButton {display:none;}
-div[data-testid="stSidebar"] button[kind="secondary"] {background: none !important; border: none !important; color: #999 !important; padding: 0 4px !important; min-width: unset !important; font-size: 0.85em !important;}
-div[data-testid="stSidebar"] button[kind="secondary"]:hover {color: #ff4444 !important;}
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
@@ -80,21 +78,27 @@ with st.sidebar:
         else:
             st.session_state.query_history = []
 
+    # 检测清空历史链接点击
+    if st.query_params.get_all("clear"):
+        st.session_state.query_history = []
+        try:
+            import json
+            _hist_file = Path(__file__).resolve().parent.parent / "data" / "query_history.json"
+            with open(_hist_file, "w", encoding="utf-8") as _f:
+                json.dump([], _f)
+        except Exception:
+            pass
+        st.query_params.clear()
+
     if st.session_state.query_history:
         hcol1, hcol2 = st.columns([3, 1])
         with hcol1:
             st.markdown("**📜 最近查询**")
         with hcol2:
-            if st.button("✕", key="clear_history", help="清空所有查询历史"):
-                st.session_state.query_history = []
-                # 同步清空本地文件
-                try:
-                    import json
-                    _hist_file = Path(__file__).resolve().parent.parent / "data" / "query_history.json"
-                    with open(_hist_file, "w", encoding="utf-8") as _f:
-                        json.dump([], _f)
-                except Exception:
-                    pass
+            st.markdown(
+                f'<a href="/?clear=1" target="_self" style="color:#999;text-decoration:none;font-size:0.85em" title="清空所有查询历史">✕</a>',
+                unsafe_allow_html=True,
+            )
         cols = st.columns(min(3, max(1, len(st.session_state.query_history))))
         for i, h in enumerate(st.session_state.query_history[:6]):
             with cols[i]:

@@ -64,10 +64,9 @@ DEFAULT_ENTITY_RESOLVE = (99009163, "Dracarys.", "alliance")
 with st.sidebar:
     st.header("⚙️ 设置")
 
-    # ── 查询历史（输入框上方） ──────────────────────────
+    # ── 查询历史：初始化 ────────────────────────────
 
     if "query_history" not in st.session_state:
-        # 从本地文件加载持久化的查询历史
         _hist_file = Path(__file__).resolve().parent.parent / "data" / "query_history.json"
         if _hist_file.exists():
             try:
@@ -79,7 +78,6 @@ with st.sidebar:
         else:
             st.session_state.query_history = []
 
-    # 检测清空历史链接点击
     if st.query_params.get_all("clear"):
         st.session_state.query_history = []
         try:
@@ -90,46 +88,6 @@ with st.sidebar:
         except Exception:
             pass
         st.query_params.clear()
-
-    if st.session_state.query_history:
-        # 检查当前 entity 是否已在历史中，不在则前置插入
-        _cur_id = st.session_state.get("entity_id")
-        _cur_name = st.session_state.get("entity_name")
-        if _cur_id and _cur_name:
-            _cur = {"id": _cur_id, "type": st.session_state.get("entity_type", "corporation")}
-            if not any(h["id"] == _cur["id"] and h.get("type") == _cur["type"] for h in st.session_state.query_history):
-                _entry = {"id": _cur["id"], "name": st.session_state.entity_name,
-                          "type": _cur["type"], "ticker": st.session_state.get("_last_ticker", "")}
-                st.session_state.query_history.insert(0, _entry)
-                st.session_state.query_history = st.session_state.query_history[:10]
-                try:
-                    import json
-                    _hf = Path(__file__).resolve().parent.parent / "data" / "query_history.json"
-                    with open(_hf, "w", encoding="utf-8") as _f:
-                        json.dump(st.session_state.query_history, _f, ensure_ascii=False, indent=2)
-                except Exception:
-                    pass
-
-        hcol1, hcol2 = st.columns([3, 1])
-        with hcol1:
-            st.markdown("**📜 最近查询**")
-        with hcol2:
-            st.markdown(
-                f'<a href="/?clear=1" target="_self" style="color:#999;text-decoration:none;font-size:0.85em" title="清空所有查询历史">✕</a>',
-                unsafe_allow_html=True,
-            )
-        cols = st.columns(3)
-        for i, h in enumerate(st.session_state.query_history[:9]):
-            with cols[i % 3]:
-                label = f"{h.get('ticker', h['name'])}"
-                if st.button(label, key=f"hist_{i}", use_container_width=True):
-                    st.session_state.entity_id = h["id"]
-                    st.session_state.entity_name = h["name"]
-                    st.session_state.entity_type = h["type"]
-                    st.session_state.data_loaded = False
-                    st.session_state._last_input = str(h["id"])
-                    st.session_state._history_click = True
-                    st.session_state._history_trigger = True
 
     # ── 初始化 session_state ──────────────────────────
 
@@ -201,6 +159,14 @@ with st.sidebar:
                     st.session_state.entity_name = str(corp_id_int)
                 st.session_state.entity_id = corp_id_int
                 st.session_state.entity_type = detected_type
+                # 解析并缓存 ticker
+                try:
+                    import requests as _req2
+                    _et = detected_type
+                    _r2 = _req2.get(f"https://esi.evetech.net/latest/{'alliances' if _et == 'alliance' else 'corporations'}/{corp_id_int}/", headers={"User-Agent": "EVE-Killboard-Analysis/1.0"}, timeout=10)
+                    st.session_state._last_ticker = _r2.json().get("ticker", "")
+                except Exception:
+                    st.session_state._last_ticker = ""
             else:
                 # 文字 → 搜索军团和联盟
                 with st.spinner(f"正在搜索「{corp_input.strip()}」..."):
@@ -229,6 +195,14 @@ with st.sidebar:
                         st.session_state.entity_name = non_sep[0][0].split(" (ID:")[0]
                         st.session_state.entity_type = non_sep[0][2]
                         st.session_state._search_options = None
+                        # 解析并缓存 ticker
+                        try:
+                            import requests as _req2
+                            _et2 = non_sep[0][2]
+                            _r2 = _req2.get(f"https://esi.evetech.net/latest/{'alliances' if _et2 == 'alliance' else 'corporations'}/{non_sep[0][1]}/", headers={"User-Agent": "EVE-Killboard-Analysis/1.0"}, timeout=10)
+                            st.session_state._last_ticker = _r2.json().get("ticker", "")
+                        except Exception:
+                            st.session_state._last_ticker = ""
                         label = "联盟" if st.session_state.entity_type == "alliance" else "军团"
                         st.success(f"✅ 已匹配 {label}: **{st.session_state.entity_name}**")
                 else:
@@ -251,7 +225,58 @@ with st.sidebar:
                 st.session_state.entity_type = etype
                 st.session_state.data_loaded = False
                 st.session_state._search_selected = True
+                # 解析并缓存 ticker
+                try:
+                    import requests as _req2
+                    _r2 = _req2.get(f"https://esi.evetech.net/latest/{'alliances' if etype == 'alliance' else 'corporations'}/{eid}/", headers={"User-Agent": "EVE-Killboard-Analysis/1.0"}, timeout=10)
+                    st.session_state._last_ticker = _r2.json().get("ticker", "")
+                except Exception:
+                    st.session_state._last_ticker = ""
                 break
+
+    # ── 查询历史（表单后渲染以获取最新 entity） ─────
+
+    if st.session_state.query_history:
+        _cur_id = st.session_state.get("entity_id")
+        _cur_name = st.session_state.get("entity_name")
+        if _cur_id and _cur_name:
+            _cur = {"id": _cur_id, "type": st.session_state.get("entity_type", "corporation")}
+            st.session_state.query_history[:] = [
+                h for h in st.session_state.query_history
+                if not (h["id"] == _cur["id"] and h.get("type") == _cur["type"])
+            ]
+            _entry = {"id": _cur["id"], "name": _cur_name,
+                      "type": _cur["type"], "ticker": st.session_state.get("_last_ticker", "")}
+            st.session_state.query_history.insert(0, _entry)
+            st.session_state.query_history = st.session_state.query_history[:10]
+            try:
+                import json
+                _hf = Path(__file__).resolve().parent.parent / "data" / "query_history.json"
+                with open(_hf, "w", encoding="utf-8") as _f:
+                    json.dump(st.session_state.query_history, _f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
+        hcol1, hcol2 = st.columns([3, 1])
+        with hcol1:
+            st.markdown("**📜 最近查询**")
+        with hcol2:
+            st.markdown(
+                f'<a href="/?clear=1" target="_self" style="color:#999;text-decoration:none;font-size:0.85em" title="清空所有查询历史">✕</a>',
+                unsafe_allow_html=True,
+            )
+        cols = st.columns(3)
+        for i, h in enumerate(st.session_state.query_history[:9]):
+            with cols[i % 3]:
+                label = f"{h.get('ticker', h['name'])}"
+                if st.button(label, key=f"hist_{i}", use_container_width=True):
+                    st.session_state.entity_id = h["id"]
+                    st.session_state.entity_name = h["name"]
+                    st.session_state.entity_type = h["type"]
+                    st.session_state.data_loaded = False
+                    st.session_state._last_input = str(h["id"])
+                    st.session_state._history_click = True
+                    st.session_state._history_trigger = True
 
     st.divider()
     st.markdown("**💡 使用说明**")

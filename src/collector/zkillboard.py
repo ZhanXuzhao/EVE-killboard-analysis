@@ -396,8 +396,9 @@ def fetch_entity_yesterday_kills(
     entity_id: int,
     entity_type: str = "corporation",
     on_progress: Optional[callable] = None,
+    past_seconds: int = 86400,
 ) -> list[dict]:
-    """拉取军团或联盟前一天的完整击杀数据（自动翻页）。
+    """拉取军团或联盟在指定时间范围内的击杀数据（自动翻页）。
 
     zKillboard 每页最多 200 条，自动逐页拉取直到无数据。
 
@@ -405,6 +406,7 @@ def fetch_entity_yesterday_kills(
         entity_id: ID
         entity_type: "corporation" 或 "alliance"
         on_progress: 进度回调 (current, total)
+        past_seconds: 回溯秒数，默认 86400（1 天）
 
     Returns:
         击杀详情字典列表
@@ -417,7 +419,7 @@ def fetch_entity_yesterday_kills(
         if on_progress:
             on_progress(page - 1, page)  # 显示当前页
 
-        kills = get_fn(entity_id, past_seconds=86400, page=page)
+        kills = get_fn(entity_id, past_seconds=past_seconds, page=page)
         if not kills:
             break
 

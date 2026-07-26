@@ -136,6 +136,7 @@ with st.sidebar:
     if selected_date != st.session_state.selected_date:
         st.session_state.selected_date = selected_date
         st.session_state.data_loaded = False
+        st.rerun()
 
     # ── 搜索表单（仅按 Enter 或点击按钮时触发） ──────
 
@@ -147,6 +148,8 @@ with st.sidebar:
             help="输入军团名称（自动搜索）或直接输入数字 ID",
         )
         analyze_btn = st.form_submit_button("📊 分析", type="primary", use_container_width=True)
+
+        # 表单提交时才执行搜索/解析
 
         # 表单提交时才执行搜索/解析
         if analyze_btn:
@@ -295,6 +298,11 @@ def load_data(target_date, use_cache: bool = True):
             st.info("📦 本地已有缓存数据，跳过 API 请求")
             return True
 
+    # 根据选定日期计算 zKillboard 回溯秒数
+    today = datetime.now(timezone.utc).date()
+    days_ago = (today - target_date).days
+    past_seconds = max(86400, (days_ago + 1) * 86400)
+
     progress_bar = st.progress(0, text="正在拉取击杀数据...")
     status_text = st.empty()
 
@@ -304,7 +312,7 @@ def load_data(target_date, use_cache: bool = True):
         status_text.text(f"已处理 {current}/{total} 条")
 
     try:
-        results = fetch_entity_yesterday_kills(entity_id, entity_type=entity_type or "corporation", on_progress=on_progress)
+        results = fetch_entity_yesterday_kills(entity_id, entity_type=entity_type or "corporation", on_progress=on_progress, past_seconds=past_seconds)
     except Exception as e:
         st.error(f"❌ 数据拉取失败: {e}")
         return False
@@ -329,8 +337,9 @@ def load_data(target_date, use_cache: bool = True):
 
 # ── 分析按钮逻辑 ────────────────────────────────────────
 
-if analyze_btn or st.session_state.data_loaded:
-    if not st.session_state.data_loaded:
+# 日期变更或表单提交 → 进入分析流程
+if analyze_btn or not st.session_state.data_loaded:
+    if not st.session_state.data_loaded and entity_id is not None:
         with st.spinner("正在拉取并分析数据..."):
             load_data(selected_date, use_cache=use_cache)
         st.session_state.data_loaded = True

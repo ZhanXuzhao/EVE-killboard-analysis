@@ -91,6 +91,33 @@ def _save_system_region_cache():
         logger.warning(f"保存星域缓存失败: {e}")
 
 
+# ── 通用 ID→名称 本地缓存 ───────────────────────────────
+
+_ID_NAME_CACHE: dict[int, str] = {}
+_ID_NAME_CACHE_FILE = DATA_DIR / "id_name_cache.json"
+
+
+def _load_id_name_cache():
+    """加载 ID→名称缓存。"""
+    global _ID_NAME_CACHE
+    if not _ID_NAME_CACHE and _ID_NAME_CACHE_FILE.exists():
+        try:
+            with open(_ID_NAME_CACHE_FILE, encoding="utf-8") as f:
+                _ID_NAME_CACHE = {int(k): v for k, v in json.load(f).items()}
+        except Exception:
+            _ID_NAME_CACHE = {}
+
+
+def _save_id_name_cache():
+    """保存 ID→名称缓存。"""
+    try:
+        _ID_NAME_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(_ID_NAME_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(_ID_NAME_CACHE, f, ensure_ascii=False)
+    except Exception as e:
+        logger.warning(f"保存 ID 名称缓存失败: {e}")
+
+
 def _enrich_system_regions(kills: list[dict]) -> list[dict]:
     """解析星系 ID 对应的星域名称并注入。
 
@@ -185,9 +212,10 @@ def _enrich_system_regions(kills: list[dict]) -> list[dict]:
 def _enrich_killmail_names(kills: list[dict]) -> list[dict]:
     """批量解析击杀数据中所有 ID 的名称并注入。
 
-    遍历所有击杀，收集所有 ID 后通过 ESI 批量查询，
-    然后将名称注入到对应字段（如 solar_system_name, ship_name 等）。
+    使用本地缓存避免重复 ESI 查询。
     """
+    _load_id_name_cache()
+
     # 收集所有需要解析的 ID
     all_ids: set[int] = set()
 
@@ -215,12 +243,24 @@ def _enrich_killmail_names(kills: list[dict]) -> list[dict]:
     if not all_ids:
         return kills
 
-    # ESI 一次最多 1000 个 ID，分批查询
-    id_list = sorted(all_ids)
+    # 从缓存中取，只查询未缓存的 ID
     name_map: dict[int, str] = {}
-    for i in range(0, len(id_list), 1000):
-        batch = id_list[i:i + 1000]
-        name_map.update(_batch_resolve_ids(batch))
+    uncached = [i for i in all_ids if i not in _ID_NAME_CACHE]
+
+    if uncached:
+        id_list = sorted(uncached)
+        for i in range(0, len(id_list), 1000):
+            batch = id_list[i:i + 1000]
+            name_map.update(_batch_resolve_ids(batch))
+        # 缓存新结果
+        if name_map:
+            _ID_NAME_CACHE.update(name_map)
+            _save_id_name_cache()
+
+    # 合并缓存
+    for i in all_ids:
+        if i in _ID_NAME_CACHE:
+            name_map[i] = _ID_NAME_CACHE[i]
 
     # 注入名称
     for km in kills:

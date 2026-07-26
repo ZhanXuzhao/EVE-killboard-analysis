@@ -1,5 +1,17 @@
 [
   {
+    "id": 1900696668,
+    "name": "The Initiative. <INIT.> <INIT.>",
+    "type": "alliance",
+    "ticker": "INIT."
+  },
+  {
+    "id": 99009163,
+    "name": "Dracarys. <D.C>",
+    "type": "alliance",
+    "ticker": "D.C"
+  },
+  {
     "id": 99012019,
     "name": "Can i bring my Drake... <-BMD>",
     "type": "alliance",
@@ -16,11 +28,5 @@
     "name": "Goonswarm Federation <CONDI>",
     "type": "alliance",
     "ticker": "CONDI"
-  },
-  {
-    "id": 99009163,
-    "name": "Dracarys.",
-    "type": "alliance",
-    "ticker": "D.C"
   }
 ]

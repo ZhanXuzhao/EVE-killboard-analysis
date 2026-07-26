@@ -99,8 +99,9 @@ with st.sidebar:
                 f'<a href="/?clear=1" target="_self" style="color:#999;text-decoration:none;font-size:0.85em" title="清空所有查询历史">✕</a>',
                 unsafe_allow_html=True,
             )
-        cols = st.columns(min(3, max(1, len(st.session_state.query_history))))
-        for i, h in enumerate(st.session_state.query_history[:6]):
+        num_cols = min(3, len(st.session_state.query_history))
+        cols = st.columns(num_cols)
+        for i, h in enumerate(st.session_state.query_history[:num_cols]):
             with cols[i]:
                 label = f"{h.get('ticker', h['name'])}"
                 if st.button(label, key=f"hist_{i}", use_container_width=True):

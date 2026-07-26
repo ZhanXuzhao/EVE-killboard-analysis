@@ -451,15 +451,15 @@ def query_top_attacker_alliances(entity_id: int, date_from: str, date_to: str, l
         rows = conn.execute(
             f"""
             SELECT a.alliance_name,
-                   COUNT(DISTINCT a.killmail_id) AS kills,
+                   COUNT(*) AS kills,
                    COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
             FROM attackers a
             JOIN killmails k ON k.killmail_id = a.killmail_id
             WHERE k.killmail_time >= ? AND k.killmail_time < ?
               AND k.{victim_col} = ?
+              AND a.final_blow = 1
               AND a.alliance_name IS NOT NULL
               AND a.alliance_name != ''
-              AND (a.character_id IS NOT NULL)
             GROUP BY a.alliance_name
             ORDER BY kills DESC
             LIMIT ?

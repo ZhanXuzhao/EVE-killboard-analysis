@@ -578,7 +578,7 @@ if entity_id is not None:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("⚔️ 击杀联盟 Top")
+        st.subheader("⚔️ 杀了谁 Top")
         if "top_killed_alliances" in dfs:
             df = dfs["top_killed_alliances"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -603,7 +603,7 @@ if entity_id is not None:
             st.info("暂无数据")
 
     with col2:
-        st.subheader("🛡️ 被杀联盟 Top")
+        st.subheader("🛡️ 被谁杀 Top")
         if "top_attacker_alliances" in dfs:
             df = dfs["top_attacker_alliances"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)

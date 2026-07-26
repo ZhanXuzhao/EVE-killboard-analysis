@@ -8,21 +8,32 @@ import pandas as pd
 from src.storage import repository as repo
 
 
-def _get_date_range(target_date: datetime = None) -> tuple[str, str]:
-    """获取指定日期的 UTC 范围 [00:00:00, 次日00:00:00)。"""
+def _get_date_range(target_date: datetime = None, report_type: str = "daily") -> tuple[str, str]:
+    """获取指定日期的 UTC 范围。
+
+    日报: [00:00:00, 次日00:00:00)
+    周报: [当周一00:00:00, 下周一00:00:00)
+    """
     tz = timezone.utc
     if target_date is None:
         now = datetime.now(tz)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        day_start = today_start - timedelta(days=1)
+        day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        if report_type == "daily":
+            day_start -= timedelta(days=1)
     else:
-        # target_date 可能是 datetime.date 或 datetime.datetime
         if isinstance(target_date, datetime):
             day_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=tz)
         else:
             day_start = datetime(target_date.year, target_date.month, target_date.day, tzinfo=tz)
-    next_day = day_start + timedelta(days=1)
-    return day_start.isoformat(), next_day.isoformat()
+
+    if report_type == "weekly":
+        days_since_monday = day_start.weekday()  # Monday=0
+        week_start = day_start - timedelta(days=days_since_monday)
+        week_end = week_start + timedelta(days=7)
+        return week_start.isoformat(), week_end.isoformat()
+    else:
+        next_day = day_start + timedelta(days=1)
+        return day_start.isoformat(), next_day.isoformat()
 
 
 _get_yesterday_range = _get_date_range  # 保持向后兼容
@@ -52,6 +63,7 @@ class CorpDailyAnalysis:
         self.top_loss_ships = []
         self.top_victims = []
         self.hourly_timeline = []
+        self.daily_timeline = []
         self.system_hotspots = []
         self.region_hotspots = []
         self.top_killed_alliances = []
@@ -80,6 +92,7 @@ class CorpDailyAnalysis:
         self.top_loss_ships = repo.query_top_loss_ships(eid, self.date_from, self.date_to, entity_type=etype)
         self.top_victims = repo.query_top_victims(eid, self.date_from, self.date_to, entity_type=etype)
         self.hourly_timeline = repo.query_hourly_timeline(eid, self.date_from, self.date_to, entity_type=etype)
+        self.daily_timeline = repo.query_daily_timeline(eid, self.date_from, self.date_to, entity_type=etype)
         self.system_hotspots = repo.query_system_hotspots(eid, self.date_from, self.date_to, entity_type=etype)
         self.region_hotspots = repo.query_region_hotspots(eid, self.date_from, self.date_to, entity_type=etype)
         self.top_killed_alliances = repo.query_top_killed_alliances(eid, self.date_from, self.date_to, entity_type=etype)
@@ -107,6 +120,12 @@ class CorpDailyAnalysis:
             df["losses"] = df["losses"].astype(int)
             dfs["hourly_timeline"] = df
 
+        if self.daily_timeline:
+            df = pd.DataFrame(self.daily_timeline)
+            df["kills"] = df["kills"].astype(int)
+            df["losses"] = df["losses"].astype(int)
+            dfs["daily_timeline"] = df
+
         if self.system_hotspots:
             dfs["system_hotspots"] = pd.DataFrame(self.system_hotspots)
 
@@ -122,9 +141,9 @@ class CorpDailyAnalysis:
         return dfs
 
 
-def analyze_entity_yesterday(entity_id: int, entity_type: str = "corporation", target_date: datetime = None) -> CorpDailyAnalysis:
+def analyze_entity_yesterday(entity_id: int, entity_type: str = "corporation", target_date: datetime = None, report_type: str = "daily") -> CorpDailyAnalysis:
     """分析军团/联盟指定日期的数据，默认昨日。"""
-    date_from, date_to = _get_date_range(target_date)
+    date_from, date_to = _get_date_range(target_date, report_type=report_type)
     analysis = CorpDailyAnalysis(entity_id, date_from, date_to, entity_type)
     analysis.run()
     return analysis

@@ -73,11 +73,11 @@ init_db()
 # ── 动态标题 ────────────────────────────────────────────
 
 def render_title(corp_name: str = None):
-    """渲染页面标题，统一格式：EVE 击杀日报：军团名"""
+    """渲染页面标题，统一格式：EVE 击杀日报/周报：军团名"""
     if corp_name:
-        title = f"🚀 EVE 击杀日报：{corp_name}"
+        title = f"🚀 EVE 击杀{_report_label}：{corp_name}"
     else:
-        title = "🚀 EVE 击杀日报"
+        title = f"🚀 EVE 击杀{_report_label}"
     st.markdown(
         f"<h1 style='text-align: center;'>{title}</h1>",
         unsafe_allow_html=True,
@@ -126,21 +126,33 @@ with st.sidebar:
         st.session_state.entity_type = None
         st.session_state.data_loaded = False
 
-    # ── 日期选择 ────────────────────────────────────
+    # ── 日期选择 + 报告类型 ──────────────────────────
 
     today = datetime.now(timezone.utc).date()
     if "selected_date" not in st.session_state:
         st.session_state.selected_date = today
-    selected_date = st.date_input(
-        "📅 选择日期",
-        value=st.session_state.selected_date,
-        max_value=today,
-        help="选择要分析的日期",
-    )
-    if selected_date != st.session_state.selected_date:
+    if "_report_type" not in st.session_state:
+        st.session_state._report_type = "daily"
+
+    col_date, col_type = st.columns([3, 2])
+    with col_date:
+        selected_date = st.date_input(
+            "📅 选择日期",
+            value=st.session_state.selected_date,
+            max_value=today,
+            help="选择要分析的日期",
+        )
+    with col_type:
+        _rt = st.radio("📊 类型", ["日报", "周报"], horizontal=True,
+                       index=0 if st.session_state._report_type == "daily" else 1,
+                       label_visibility="collapsed")
+        report_type = "daily" if _rt == "日报" else "weekly"
+
+    if selected_date != st.session_state.selected_date or report_type != st.session_state._report_type:
         st.session_state.selected_date = selected_date
+        st.session_state._report_type = report_type
         st.session_state.data_loaded = False
-        _debug(f"date_change: {selected_date}")
+        _debug(f"date_change: {selected_date} type={report_type}")
         st.rerun()
 
     # ── 搜索表单（仅按 Enter 或点击按钮时触发） ──────
@@ -325,18 +337,18 @@ if st.session_state.pop("_search_selected", False):
 
 # ── 数据加载 ────────────────────────────────────────────
 
-def load_data(target_date, use_cache: bool = True):
-    """拉取并存储指定日期的数据。"""
+def load_data(date_from, date_to, use_cache: bool = True):
+    """拉取并存储指定日期范围的数据。"""
     # 使用缓存时检查数据库是否有数据
     if use_cache:
-        dt_from, dt_to = _get_date_range(target_date)
-        if _has_data(entity_id, dt_from, dt_to, entity_type=entity_type or "corporation"):
+        if _has_data(entity_id, date_from, date_to, entity_type=entity_type or "corporation"):
             st.info("📦 本地已有缓存数据，跳过 API 请求")
             return True
 
-    # 根据选定日期计算 zKillboard 回溯秒数
+    # 根据日期范围计算 zKillboard 回溯秒数
     today = datetime.now(timezone.utc).date()
-    days_ago = (today - target_date).days
+    range_end = datetime.fromisoformat(date_to).date()
+    days_ago = (today - range_end).days + 1
     past_seconds = max(86400, (days_ago + 1) * 86400)
 
     progress_bar = st.progress(0, text="正在拉取击杀数据...")
@@ -379,11 +391,16 @@ def load_data(target_date, use_cache: bool = True):
 
 # ── 分析按钮逻辑 ────────────────────────────────────────
 
+# 计算日期范围（日报/周报）
+report_type = st.session_state.get("_report_type", "daily")
+_date_from, _date_to = _get_date_range(selected_date, report_type=report_type)
+_report_label = "周报" if report_type == "weekly" else "日报"
+
 # 有实体时始终进入分析/展示流程
 if entity_id is not None:
     if not st.session_state.data_loaded and entity_id is not None:
         with st.spinner("正在拉取并分析数据..."):
-            load_data(selected_date, use_cache=use_cache)
+            load_data(_date_from, _date_to, use_cache=use_cache)
         st.session_state.data_loaded = True
 
     # ── 执行分析 ──────────────────────────────────────────
@@ -417,18 +434,24 @@ if entity_id is not None:
     display_name = entity_name or f"ID: {entity_id}"
     if _ticker:
         display_name = f"{display_name} <{_ticker}>"
-    date_label = selected_date.strftime("%Y-%m-%d")
+
+    if report_type == "weekly":
+        _start = datetime.fromisoformat(_date_from)
+        _end = datetime.fromisoformat(_date_to) - timedelta(days=1)
+        date_label = f"{_start.strftime('%Y-%m-%d')} ~ {_end.strftime('%Y-%m-%d')}"
+    else:
+        date_label = selected_date.strftime("%Y-%m-%d")
     render_title(f"{date_label} {display_name}")
 
     st.markdown(
-        f"<script>document.title = 'EVE {entity_type or '军团'}击杀日报：{date_label} {display_name}';</script>",
+        f"<script>document.title = 'EVE {entity_type or '军团'}击杀{_report_label}：{date_label} {display_name}';</script>",
         unsafe_allow_html=True,
     )
 
-    analysis = analyze_entity_yesterday(entity_id, entity_type=entity_type or "corporation", target_date=selected_date)
+    analysis = analyze_entity_yesterday(entity_id, entity_type=entity_type or "corporation", target_date=selected_date, report_type=report_type)
 
     if not analysis.has_data:
-        st.warning(f"😴 **{display_name}** 昨日没有击杀/损失记录，或数据尚未拉取。")
+        st.warning(f"😴 **{display_name}** 该时段没有击杀/损失记录，或数据尚未拉取。")
         st.info("💡 取消勾选「使用缓存」可强制从 zKillboard 拉取。")
         st.stop()
 
@@ -466,7 +489,7 @@ if entity_id is not None:
                   help="击杀 ISK ÷ 损失 ISK")
     with k6:
         st.metric("👥 活跃", analysis.active_members,
-                  help="昨日有击杀/损失记录的成员数")
+                  help="该时段有击杀/损失记录的成员数")
 
     # ISK 金额格式化辅助（图表 tooltip 用）
     def fmt_isk(val: float) -> str:
@@ -478,9 +501,9 @@ if entity_id is not None:
             return f"{val / 1_000:.0f}K"
         return f"{val:.0f}"
 
-    # ── Row 1: 击杀时间分布 ────────────────────────────
+    # ── Row 1: 按时统计 ────────────────────────────────
 
-    st.subheader("📈 击杀损失分布")
+    st.subheader("📈 按时统计")
     if "hourly_timeline" in dfs:
         df = dfs["hourly_timeline"].copy()
         df["kill_isk_label"] = df["kill_isk"].apply(_fmt)
@@ -518,6 +541,44 @@ if entity_id is not None:
         )
         fig.update_xaxes(dtick=2)
         st.plotly_chart(fig, width="stretch")
+
+        # 周报模式下额外按天统计
+        if report_type == "weekly" and "daily_timeline" in dfs:
+            dfd = dfs["daily_timeline"].copy()
+            dfd["kill_isk_label"] = dfd["kill_isk"].apply(_fmt)
+            dfd["loss_isk_label"] = dfd["loss_isk"].apply(_fmt)
+            figd = go.Figure()
+            figd.add_trace(go.Bar(
+                x=dfd["day"], y=dfd["kills"],
+                name="击杀",
+                marker=dict(
+                    color=dfd["kill_isk"],
+                    colorscale="Greens",
+                    showscale=False,
+                ),
+                hovertemplate="%{x}<br>击杀: %{y}<br>ISK: %{customdata[0]}<extra></extra>",
+                customdata=dfd[["kill_isk_label"]].values,
+            ))
+            figd.add_trace(go.Bar(
+                x=dfd["day"], y=dfd["losses"],
+                name="损失",
+                marker=dict(
+                    color=dfd["loss_isk"],
+                    colorscale="Reds",
+                    showscale=False,
+                ),
+                hovertemplate="%{x}<br>损失: %{y}<br>ISK: %{customdata[0]}<extra></extra>",
+                customdata=dfd[["loss_isk_label"]].values,
+            ))
+            figd.update_layout(
+                barmode="group",
+                height=300,
+                margin=dict(l=20, r=20, t=20, b=20),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+                xaxis_title="日期",
+                yaxis_title="数量",
+            )
+            st.plotly_chart(figd, width="stretch")
     else:
         st.info("暂无时间分布数据")
 

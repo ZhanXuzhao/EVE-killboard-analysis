@@ -268,6 +268,34 @@ def query_top_kill_ships(entity_id: int, date_from: str, date_to: str, limit: in
         return [dict(r) for r in rows]
 
 
+def query_daily_timeline(entity_id: int, date_from: str, date_to: str, entity_type: str = "corporation") -> list[dict]:
+    """每天击杀+损失分布（用于周报）。"""
+    id_col = _id_col(entity_type)
+    victim_col = _victim_col(entity_type)
+    with get_db() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT DATE(k.killmail_time) AS day,
+                   COUNT(DISTINCT CASE WHEN EXISTS (
+                       SELECT 1 FROM attackers a
+                       WHERE a.killmail_id = k.killmail_id AND a.{id_col} = ?
+                   ) AND k.npc_kill = 0 THEN k.killmail_id END) AS kills,
+                   COALESCE(SUM(CASE WHEN EXISTS (
+                       SELECT 1 FROM attackers a
+                       WHERE a.killmail_id = k.killmail_id AND a.{id_col} = ?
+                   ) AND k.npc_kill = 0 THEN k.isk_destroyed ELSE 0 END), 0) AS kill_isk,
+                   COUNT(DISTINCT CASE WHEN k.{victim_col} = ? THEN k.killmail_id END) AS losses,
+                   COALESCE(SUM(CASE WHEN k.{victim_col} = ? THEN k.isk_destroyed ELSE 0 END), 0) AS loss_isk
+            FROM killmails k
+            WHERE k.killmail_time >= ? AND k.killmail_time < ?
+            GROUP BY DATE(k.killmail_time)
+            ORDER BY day
+            """,
+            (entity_id, entity_id, entity_id, entity_id, date_from, date_to),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def query_hourly_timeline(entity_id: int, date_from: str, date_to: str, entity_type: str = "corporation") -> list[dict]:
     """24 小时击杀+损失时间分布。"""
     id_col = _id_col(entity_type)

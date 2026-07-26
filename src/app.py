@@ -1,4 +1,4 @@
-"""军团击杀日报 — Streamlit 主界面。"""
+"""击杀日报 — Streamlit 主界面。"""
 
 import sys
 from pathlib import Path
@@ -20,7 +20,7 @@ from src.analysis.corp_analysis import analyze_entity_yesterday
 # ── 页面配置 ────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="EVE 军团击杀日报",
+    page_title="EVE 击杀日报",
     page_icon="🚀",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -43,11 +43,11 @@ init_db()
 # ── 动态标题 ────────────────────────────────────────────
 
 def render_title(corp_name: str = None):
-    """渲染页面标题，统一格式：EVE 军团击杀日报：军团名"""
+    """渲染页面标题，统一格式：EVE 击杀日报：军团名"""
     if corp_name:
-        title = f"🚀 EVE 军团击杀日报：{corp_name}"
+        title = f"🚀 EVE 击杀日报：{corp_name}"
     else:
-        title = "🚀 EVE 军团击杀日报"
+        title = "🚀 EVE 击杀日报"
     st.markdown(
         f"<h1 style='text-align: center;'>{title}</h1>",
         unsafe_allow_html=True,

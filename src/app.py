@@ -15,7 +15,7 @@ import plotly.graph_objects as go
 from src.storage.database import init_db
 from src.collector.zkillboard import fetch_entity_yesterday_kills, search_entities
 from src.storage.repository import save_killmail, has_killmail
-from src.analysis.corp_analysis import analyze_entity_yesterday
+from src.analysis.corp_analysis import analyze_entity_yesterday, _get_yesterday_range, _has_data
 
 # ── 页面配置 ────────────────────────────────────────────
 
@@ -90,11 +90,9 @@ with st.sidebar:
         help="输入军团名称（自动搜索）或直接输入数字 ID",
     )
 
-    col1, col2 = st.columns(2)
-    with col1:
-        analyze_btn = st.button("📊 分析昨日击杀", width="stretch", type="primary")
-    with col2:
-        refresh_btn = st.button("🔄 强制刷新数据", width="stretch")
+    analyze_btn = st.button("📊 分析昨日击杀", width="stretch", type="primary")
+    use_cache = st.checkbox("📦 使用缓存", value=True,
+                            help="勾选时相同查询直接从本地数据库读取，不请求网络")
 
     st.divider()
     st.markdown("**💡 使用说明**")
@@ -103,8 +101,8 @@ with st.sidebar:
 1. 输入**军团名称**（中文/英文均可）或**数字 ID**
 2. 输入名称后会自动搜索，从结果中选择目标军团
 3. 点击「分析昨日击杀」
-4. 首次分析会自动拉取数据，之后使用缓存
-5. 点击「强制刷新」重新从 zKillboard 拉取
+4. **使用缓存**勾选时，跳过 API 请求，直接分析本地已有数据
+5. 取消勾选则强制从 zKillboard 拉取最新数据
         """
     )
 
@@ -239,8 +237,15 @@ if "auto_triggered" not in st.session_state:
 
 # ── 数据加载 ────────────────────────────────────────────
 
-def load_data(force_refresh: bool = False):
+def load_data(use_cache: bool = True):
     """拉取并存储昨日数据。"""
+    # 使用缓存时检查数据库是否有数据
+    if use_cache:
+        dt_from, dt_to = _get_yesterday_range()
+        if _has_data(entity_id, dt_from, dt_to, entity_type=entity_type or "corporation"):
+            st.info("📦 本地已有缓存数据，跳过 API 请求")
+            return True
+
     progress_bar = st.progress(0, text="正在拉取击杀数据...")
     status_text = st.empty()
 
@@ -262,11 +267,6 @@ def load_data(force_refresh: bool = False):
     for r in results:
         if has_killmail(r["killmail"]["killmail_id"]):
             skipped += 1
-            if force_refresh:
-                # 暂时简单处理：跳过已存在的
-                skipped += 0
-            else:
-                skipped += 0
         else:
             save_killmail(r["killmail"], r["attackers"], r["items"])
             saved += 1
@@ -280,13 +280,10 @@ def load_data(force_refresh: bool = False):
 
 # ── 分析按钮逻辑 ────────────────────────────────────────
 
-if analyze_btn or refresh_btn or st.session_state.data_loaded:
-    if refresh_btn:
-        st.session_state.data_loaded = False
-
+if analyze_btn or st.session_state.data_loaded:
     if not st.session_state.data_loaded:
         with st.spinner("正在拉取并分析数据..."):
-            load_data(force_refresh=refresh_btn)
+            load_data(use_cache=use_cache)
         st.session_state.data_loaded = True
 
     # ── 执行分析 ──────────────────────────────────────────
@@ -303,7 +300,7 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
 
     if not analysis.has_data:
         st.warning(f"😴 **{display_name}** 昨日没有击杀/损失记录，或数据尚未拉取。")
-        st.info("💡 如果是首次使用，请点击「强制刷新数据」从 zKillboard 拉取。")
+        st.info("💡 取消勾选「使用缓存」可强制从 zKillboard 拉取。")
         st.stop()
 
     # 记录查询历史

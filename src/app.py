@@ -126,7 +126,7 @@ with st.sidebar:
 
     today = datetime.now(timezone.utc).date()
     if "selected_date" not in st.session_state:
-        st.session_state.selected_date = today - timedelta(days=1)
+        st.session_state.selected_date = today
     selected_date = st.date_input(
         "📅 选择日期",
         value=st.session_state.selected_date,

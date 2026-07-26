@@ -319,37 +319,36 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
 
     # ── KPI 指标卡 ──────────────────────────────────────
 
-    col1, col2, col3, col4 = st.columns(4)
+    isk_killed = stats["kills"]["isk"]
+    isk_lost = stats["losses"]["isk"]
+    kd_ratio = round(isk_killed / isk_lost, 2) if isk_lost > 0 else "∞"
 
-    with col1:
-        st.metric(
-            "🎯 总击杀",
-            stats["kills"]["count"],
-            help="本方成员参与击杀的总数（不含 NPC）",
-        )
-    with col2:
-        st.metric(
-            "💀 总损失",
-            stats["losses"]["count"],
-            help="本方成员被击杀的总数",
-        )
-    with col3:
-        isk_killed = stats["kills"]["isk"]
-        isk_lost = stats["losses"]["isk"]
-        kd_ratio = (
-            round(isk_killed / isk_lost, 2) if isk_lost > 0 else "∞"
-        )
-        st.metric(
-            "💰 ISK 击杀/损失比",
-            f"{kd_ratio}",
-            help="击杀 ISK 总值 ÷ 损失 ISK 总值",
-        )
-    with col4:
-        st.metric(
-            "👥 活跃成员",
-            analysis.active_members,
-            help="昨日有击杀或损失记录的成员数",
-        )
+    def _fmt(v):
+        if v >= 1e12:
+            return f"{v/1e12:.2f}T"
+        if v >= 1e9:
+            return f"{v/1e9:.2f}B"
+        return f"{v/1e6:.1f}M"
+
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    with k1:
+        st.metric("🎯 击杀", stats["kills"]["count"],
+                  help="本方击杀总数（不含 NPC）")
+    with k2:
+        st.metric("💰 击杀 ISK", _fmt(isk_killed),
+                  help="击杀总价值")
+    with k3:
+        st.metric("💀 损失", stats["losses"]["count"],
+                  help="本方被击杀总数")
+    with k4:
+        st.metric("💸 损失 ISK", _fmt(isk_lost),
+                  help="损失总价值")
+    with k5:
+        st.metric("📊 ISK 比", f"{kd_ratio}",
+                  help="击杀 ISK ÷ 损失 ISK")
+    with k6:
+        st.metric("👥 活跃", analysis.active_members,
+                  help="昨日有击杀/损失记录的成员数")
 
     # ISK 金额格式化辅助（图表 tooltip 用）
     def fmt_isk(val: float) -> str:
@@ -482,24 +481,16 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
 
     st.subheader("🏆 击杀排行")
     if "top_killers" in dfs:
-        df = dfs["top_killers"]
-        # 保留数值列用于排序，额外加格式化显示列
-        df["isk_display"] = df["total_isk"].apply(
-            lambda v: f"{v/1e9:.2f}B" if v >= 1e9 else f"{v/1e6:.1f}M" if v >= 1e6 else f"{v/1e3:.0f}K" if v >= 1e3 else f"{v:.0f}"
-        )
-        display_df = df[["character_name", "ship_name", "kills", "total_isk", "isk_display"]]
-        display_df.columns = ["角色名", "主要舰船", "击杀数", "总 ISK", "总 ISK (显示)"]
+        df = dfs["top_killers"].copy()
+        # ISK 转为百万单位（保留数值，可排序）
+        df["isk_m"] = (df["total_isk"] / 1_000_000).round(1)
+        display_df = df[["character_name", "ship_name", "kills", "isk_m"]]
+        display_df.columns = ["角色名", "主要舰船", "击杀数", "总 ISK (M)"]
 
         display_df.index = range(1, len(display_df) + 1)
         display_df.index.name = "排名"
 
-        st.dataframe(
-            display_df[["角色名", "主要舰船", "击杀数", "总 ISK"]],
-            column_config={
-                "总 ISK": st.column_config.NumberColumn("总 ISK", format=",.0f")
-            },
-            width="stretch",
-        )
+        st.dataframe(display_df, width="stretch")
     else:
         st.info("暂无击杀排行数据")
 
@@ -507,21 +498,16 @@ if analyze_btn or refresh_btn or st.session_state.data_loaded:
 
     st.subheader("🎯 常被击杀的目标")
     if "top_victims" in dfs:
-        df = dfs["top_victims"]
+        df = dfs["top_victims"].copy()
+        df["isk_m"] = (df["total_isk"] / 1_000_000).round(1)
         display_df = df[
-            ["victim_character_name", "victim_corporation_name", "count", "total_isk"]
+            ["victim_character_name", "victim_corporation_name", "count", "isk_m"]
         ]
-        display_df.columns = ["角色名", "军团", "被击杀次数", "总 ISK"]
+        display_df.columns = ["角色名", "军团", "被击杀次数", "总 ISK (M)"]
         display_df.index = range(1, len(display_df) + 1)
         display_df.index.name = "排名"
 
-        st.dataframe(
-            display_df,
-            column_config={
-                "总 ISK": st.column_config.NumberColumn("总 ISK", format=",.0f")
-            },
-            width="stretch",
-        )
+        st.dataframe(display_df, width="stretch")
     else:
         st.info("暂无数据")
 

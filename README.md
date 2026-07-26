@@ -4,11 +4,13 @@ EVE Online 军团与联盟击杀记录查询与分析工具。
 
 基于 **zKillboard API** + **ESI API**，提供军团/联盟的击杀/损失数据拉取、本地缓存、多维度分析与可视化展示。
 
+
 ---
 
 ## 📸 截图
 
-![应用截图](https://img.shields.io/badge/EVE-击杀日报-blue?logo=eve-online)
+[点这里开始体验](https://eve-killboard-analysis-kh7x2vrzkn9wky2ajcrkxn.streamlit.app/)
+
 ![应用截图](images/屏幕截图%202026-07-26%20165811.png)
 ---
 
@@ -158,9 +160,10 @@ EVE-killboard-analysis/
 ├── requirements.txt
 ├── data/                           # 运行时数据
 │   ├── killboard.db                # SQLite 数据库（自动生成）
-│   ├── id_name_cache.json          # ID→名称缓存
+│   ├── killboard.db                # SQLite 数据库（含 ID→名称、星系→星域缓存表）
 │   ├── query_history.json          # 查询历史持久化
-│   └── system_region_cache.json    # 星系→星域映射缓存
+│   ├── id_name_cache.json.bak      # ID→名称缓存（旧 JSON 备份，已迁移至 DB）
+│   └── system_region_cache.json.bak# 星系→星域映射缓存（旧 JSON 备份，已迁移至 DB）
 └── src/
     ├── __init__.py
     ├── app.py                      # Streamlit 主入口 + UI

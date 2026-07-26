@@ -1,24 +1,25 @@
 """zKillboard API 客户端 — 获取并解析击杀数据。"""
 
-import json
 import logging
-from pathlib import Path
 from typing import Optional
 
 import requests
 
 from src.config import (
-    DATA_DIR,
     ZKILLBOARD_BASE_URL,
     REQUEST_TIMEOUT,
     USER_AGENT,
 )
+
 
 logger = logging.getLogger(__name__)
 
 # 请求会话（连接复用）
 _session = requests.Session()
 _session.headers.update({"User-Agent": USER_AGENT})
+
+# ESI API 端点
+_ESI_NAMES_URL = "https://esi.evetech.net/latest/universe/names/"
 
 
 def _request(path: str, params: Optional[dict] = None) -> Optional[dict | list]:
@@ -65,26 +66,39 @@ def _batch_resolve_ids(id_batch: list[int]) -> dict[int, str]:
 # ── 星系→星域 本地缓存 ──────────────────────────────────
 
 _SYSTEM_REGION_CACHE: dict[int, str] = {}
-_SYSTEM_REGION_CACHE_FILE = DATA_DIR / "system_region_cache.json"
+_SYSTEM_REGION_CACHE_LOADED = False
 
 
 def _load_system_region_cache():
-    """加载本地缓存。"""
-    global _SYSTEM_REGION_CACHE
-    if not _SYSTEM_REGION_CACHE and _SYSTEM_REGION_CACHE_FILE.exists():
-        try:
-            with open(_SYSTEM_REGION_CACHE_FILE, encoding="utf-8") as f:
-                _SYSTEM_REGION_CACHE = {int(k): v for k, v in json.load(f).items()}
-        except Exception:
-            _SYSTEM_REGION_CACHE = {}
+    """从 SQLite 加载星系→星域缓存到内存。"""
+    global _SYSTEM_REGION_CACHE, _SYSTEM_REGION_CACHE_LOADED
+    if _SYSTEM_REGION_CACHE_LOADED:
+        return
+    _SYSTEM_REGION_CACHE.clear()
+    try:
+        from src.storage.database import get_db
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT system_id, region_name FROM system_region_cache"
+            ).fetchall()
+            for row in rows:
+                _SYSTEM_REGION_CACHE[row["system_id"]] = row["region_name"]
+    except Exception as e:
+        logger.warning(f"加载星域缓存失败: {e}")
+    _SYSTEM_REGION_CACHE_LOADED = True
 
 
 def _save_system_region_cache():
-    """保存本地缓存。"""
+    """将内存中的星系→星域缓存写入 SQLite。"""
+    if not _SYSTEM_REGION_CACHE:
+        return
     try:
-        _SYSTEM_REGION_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(_SYSTEM_REGION_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(_SYSTEM_REGION_CACHE, f, ensure_ascii=False)
+        from src.storage.database import get_db
+        with get_db() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO system_region_cache (system_id, region_name) VALUES (?, ?)",
+                list(_SYSTEM_REGION_CACHE.items()),
+            )
     except Exception as e:
         logger.warning(f"保存星域缓存失败: {e}")
 
@@ -92,26 +106,39 @@ def _save_system_region_cache():
 # ── 通用 ID→名称 本地缓存 ───────────────────────────────
 
 _ID_NAME_CACHE: dict[int, str] = {}
-_ID_NAME_CACHE_FILE = DATA_DIR / "id_name_cache.json"
+_ID_NAME_CACHE_LOADED = False
 
 
 def _load_id_name_cache():
-    """加载 ID→名称缓存。"""
-    global _ID_NAME_CACHE
-    if not _ID_NAME_CACHE and _ID_NAME_CACHE_FILE.exists():
-        try:
-            with open(_ID_NAME_CACHE_FILE, encoding="utf-8") as f:
-                _ID_NAME_CACHE = {int(k): v for k, v in json.load(f).items()}
-        except Exception:
-            _ID_NAME_CACHE = {}
+    """从 SQLite 加载 ID→名称缓存到内存。"""
+    global _ID_NAME_CACHE, _ID_NAME_CACHE_LOADED
+    if _ID_NAME_CACHE_LOADED:
+        return
+    _ID_NAME_CACHE.clear()
+    try:
+        from src.storage.database import get_db
+        with get_db() as conn:
+            rows = conn.execute(
+                "SELECT entity_id, name FROM id_name_cache"
+            ).fetchall()
+            for row in rows:
+                _ID_NAME_CACHE[row["entity_id"]] = row["name"]
+    except Exception as e:
+        logger.warning(f"加载 ID 名称缓存失败: {e}")
+    _ID_NAME_CACHE_LOADED = True
 
 
 def _save_id_name_cache():
-    """保存 ID→名称缓存。"""
+    """将内存中的 ID→名称缓存写入 SQLite。"""
+    if not _ID_NAME_CACHE:
+        return
     try:
-        _ID_NAME_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(_ID_NAME_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(_ID_NAME_CACHE, f, ensure_ascii=False)
+        from src.storage.database import get_db
+        with get_db() as conn:
+            conn.executemany(
+                "INSERT OR REPLACE INTO id_name_cache (entity_id, name) VALUES (?, ?)",
+                list(_ID_NAME_CACHE.items()),
+            )
     except Exception as e:
         logger.warning(f"保存 ID 名称缓存失败: {e}")
 
@@ -120,7 +147,7 @@ def _enrich_system_regions(kills: list[dict]) -> list[dict]:
     """解析星系 ID 对应的星域名称并注入。
 
     流程：星系 → 星座(获取 region_id) → 星域(获取名称)
-    使用本地 JSON 缓存加速后续查询。
+    使用 SQLite 缓存加速后续查询。
     """
     _load_system_region_cache()
 
@@ -297,24 +324,22 @@ def _enrich_killmail_names(kills: list[dict]) -> list[dict]:
 
 def get_corporation_kills(
     corporation_id: int,
-    start_time: int,
-    end_time: int,
+    past_seconds: int = 86400,
     page: int = 1,
 ) -> list[dict]:
-    """获取指定军团在指定时间范围内的一页击杀数据。
+    """获取指定军团在最近 N 秒内的一页击杀数据。
 
     zKillboard API 每页最多返回 200 条，通过 page 路径参数翻页。
 
     Args:
         corporation_id: 军团 ID
-        start_time: 开始时间（Unix 时间戳）
-        end_time: 结束时间（Unix 时间戳）
+        past_seconds: 回溯秒数，默认 86400（1 天）
         page: 页码，从 1 开始
 
     Returns:
         击杀详情字典列表
     """
-    path = f"corporationID/{corporation_id}/startTime/{start_time}/endTime/{end_time}/page/{page}/"
+    path = f"corporationID/{corporation_id}/pastSeconds/{past_seconds}/page/{page}/"
     data = _request(path)
 
     if isinstance(data, list):
@@ -328,12 +353,11 @@ def get_corporation_kills(
 
 def get_alliance_kills(
     alliance_id: int,
-    start_time: int,
-    end_time: int,
+    past_seconds: int = 86400,
     page: int = 1,
 ) -> list[dict]:
-    """获取指定联盟在指定时间范围内的一页击杀数据。"""
-    path = f"allianceID/{alliance_id}/startTime/{start_time}/endTime/{end_time}/page/{page}/"
+    """获取指定联盟在最近 N 秒内的一页击杀数据。"""
+    path = f"allianceID/{alliance_id}/pastSeconds/{past_seconds}/page/{page}/"
     data = _request(path)
 
     if isinstance(data, list):
@@ -385,28 +409,13 @@ def search_entities(query: str, limit: int = 10) -> dict:
     return result
 
 
-def fetch_entity_kills_by_range(
+def fetch_entity_kills(
     entity_id: int,
-    entity_type: str,
-    start_time: int,
-    end_time: int,
+    entity_type: str = "corporation",
     on_progress: Optional[callable] = None,
+    past_seconds: int = 86400,
 ) -> tuple[list[dict], bool]:
-    """拉取军团/联盟在指定时间戳范围内的击杀数据（自动翻页），返回数据和完整性标志。
-
-    zKillboard 每页最多 200 条，自动逐页拉取直到无数据。
-    如果最后一页不足 200 条，标记为 complete=True，否则为 False。
-
-    Args:
-        entity_id: ID
-        entity_type: "corporation" 或 "alliance"
-        start_time: 开始时间（Unix 时间戳）
-        end_time: 结束时间（Unix 时间戳）
-        on_progress: 进度回调 (page, items_in_page)
-
-    Returns:
-        (results, complete) — results 为击杀详情列表，complete 表示是否拉完整
-    """
+    """拉取军团/联盟在最近 N 秒内的击杀数据（自动翻页），返回数据和完整性标志。"""
     get_fn = get_alliance_kills if entity_type == "alliance" else get_corporation_kills
 
     all_kills = []
@@ -414,7 +423,7 @@ def fetch_entity_kills_by_range(
     complete = True
     while True:
         try:
-            kills = get_fn(entity_id, start_time=start_time, end_time=end_time, page=page)
+            kills = get_fn(entity_id, past_seconds=past_seconds, page=page)
         except RuntimeError:
             complete = False
             break
@@ -422,12 +431,16 @@ def fetch_entity_kills_by_range(
         if not kills:
             break
 
-        all_kills.extend(kills)
+        all_kills.extend(k for k in kills if k is not None)
         if on_progress:
             on_progress(page, len(kills))
 
-        if len(kills) < 200:
-            break  # 不足 200 说明是最后一页
+        # 翻页：zKillboard 首页可能 <200 但还有下一页
+        # 策略：至少试 2 页；之后 <200 才停；最多 5 页防超时
+        if page >= 5:
+            break
+        if page >= 2 and len(kills) < 200:
+            break
         page += 1
 
     if not all_kills:
@@ -438,7 +451,7 @@ def fetch_entity_kills_by_range(
     if on_progress:
         on_progress(page, 0)
 
-    # 批量解析名称和星域
+    # ESI 名称解析 & 星域解析
     all_kills = _enrich_killmail_names(all_kills)
     all_kills = _enrich_system_regions(all_kills)
 
@@ -447,7 +460,6 @@ def fetch_entity_kills_by_range(
         km_id = km.get("killmail_id")
         if not km_id:
             continue
-
         result = {
             "killmail": km,
             "attackers": km.get("attackers", []),

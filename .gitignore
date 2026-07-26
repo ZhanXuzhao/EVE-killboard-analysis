@@ -24,6 +24,12 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 data/query_history.json
+# ESI 查询缓存（自动生成，不提交）
+# 已迁移到 SQLite 数据库，旧 JSON 备份保留本地
+data/id_name_cache.json
+data/id_name_cache.json.bak
+data/system_region_cache.json
+data/system_region_cache.json.bak
 
 # ── 临时文件 ────────────────────────────────────────────
 *.log

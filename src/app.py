@@ -319,7 +319,27 @@ if analyze_btn or st.session_state.data_loaded:
 
     # ── 执行分析 ──────────────────────────────────────────
 
+    # 解析 ticker 用于展示
+    _ticker = st.session_state.get("_ticker_cache", {}).get(entity_id)
+    if not _ticker:
+        try:
+            import requests as _req
+            if (entity_type or "corporation") == "alliance":
+                _resp = _req.get(f"https://esi.evetech.net/latest/alliances/{entity_id}/",
+                                 headers={"User-Agent": "EVE-Killboard-Analysis/1.0"}, timeout=10)
+            else:
+                _resp = _req.get(f"https://esi.evetech.net/latest/corporations/{entity_id}/",
+                                 headers={"User-Agent": "EVE-Killboard-Analysis/1.0"}, timeout=10)
+            _ticker = _resp.json().get("ticker", "")
+        except Exception:
+            _ticker = ""
+        _tc = st.session_state.get("_ticker_cache", {})
+        _tc[entity_id] = _ticker
+        st.session_state._ticker_cache = _tc
+
     display_name = entity_name or f"ID: {entity_id}"
+    if _ticker:
+        display_name = f"{display_name} <{_ticker}>"
     render_title(display_name)
 
     st.markdown(
@@ -335,25 +355,6 @@ if analyze_btn or st.session_state.data_loaded:
         st.stop()
 
     # 记录查询历史
-    # 解析 ticker
-    _ticker = st.session_state.get("_ticker_cache", {}).get(entity_id)
-    if not _ticker:
-        try:
-            import requests as _req
-            if (entity_type or "corporation") == "alliance":
-                _resp = _req.get(f"https://esi.evetech.net/latest/alliances/{entity_id}/",
-                                 headers={"User-Agent": "EVE-Killboard-Analysis/1.0"}, timeout=10)
-            else:
-                _resp = _req.get(f"https://esi.evetech.net/latest/corporations/{entity_id}/",
-                                 headers={"User-Agent": "EVE-Killboard-Analysis/1.0"}, timeout=10)
-            _ticker = _resp.json().get("ticker", "")
-        except Exception:
-            _ticker = ""
-        # 缓存 ticker
-        _tc = st.session_state.get("_ticker_cache", {})
-        _tc[entity_id] = _ticker
-        st.session_state._ticker_cache = _tc
-
     _history = st.session_state.query_history
     _entry = {"id": entity_id, "name": display_name, "type": entity_type or "corporation", "ticker": _ticker}
     # 去重：如果已存在则删除旧记录

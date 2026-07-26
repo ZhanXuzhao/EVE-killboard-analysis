@@ -204,7 +204,8 @@ def query_top_killers(entity_id: int, date_from: str, date_to: str, limit: int =
     with get_db() as conn:
         rows = conn.execute(
             f"""
-            SELECT a.character_id, a.character_name,
+            SELECT a.character_id,
+                   COALESCE(NULLIF(a.character_name, ''), 'Unknown') AS character_name,
                    a.ship_name,
                    COUNT(DISTINCT a.killmail_id) AS kills,
                    COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
@@ -399,7 +400,8 @@ def query_top_victims(entity_id: int, date_from: str, date_to: str, limit: int =
     with get_db() as conn:
         rows = conn.execute(
             f"""
-            SELECT k.victim_character_id, k.victim_character_name,
+            SELECT k.victim_character_id,
+                   COALESCE(NULLIF(k.victim_character_name, ''), 'Unknown') AS victim_character_name,
                    k.victim_corporation_name, k.victim_alliance_name,
                    COUNT(*) AS count,
                    COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
@@ -518,6 +520,127 @@ def query_top_attacker_alliances(entity_id: int, date_from: str, date_to: str, l
 
 
 # ── 联盟分析查询 ────────────────────────────────────────
+
+
+def retry_null_names():
+    """对数据库中角色名为空的记录重试 ESI 名称解析。
+
+    收集所有有 ID 但无名称的角色/军团/联盟，调用 ESI 批量查询，
+    将解析到的名称回填到数据库。
+    """
+    import requests as _req
+    from src.config import USER_AGENT
+
+    _headers = {"User-Agent": USER_AGENT}
+    _updated = 0
+
+    with get_db() as conn:
+        # -- 收集 attacker 中缺名的 character_id --
+        rows = conn.execute(
+            "SELECT DISTINCT character_id FROM attackers "
+            "WHERE character_id IS NOT NULL "
+            "AND (character_name IS NULL OR character_name='')"
+        ).fetchall()
+        char_ids = [r["character_id"] for r in rows if r["character_id"]]
+
+        # -- 收集 killmails 中缺名的 victim_character_id --
+        rows = conn.execute(
+            "SELECT DISTINCT victim_character_id FROM killmails "
+            "WHERE victim_character_id IS NOT NULL "
+            "AND (victim_character_name IS NULL OR victim_character_name='')"
+        ).fetchall()
+        victim_ids = [r["victim_character_id"] for r in rows if r["victim_character_id"]]
+
+        # 合并所有 ID，也加入常用的 corporation/alliance ID
+        all_ids = set(char_ids + victim_ids)
+        rows = conn.execute(
+            "SELECT DISTINCT victim_corporation_id FROM killmails "
+            "WHERE victim_corporation_id IS NOT NULL "
+            "AND (victim_corporation_name IS NULL OR victim_corporation_name='')"
+        ).fetchall()
+        all_ids.update(r["victim_corporation_id"] for r in rows if r["victim_corporation_id"])
+        rows = conn.execute(
+            "SELECT DISTINCT victim_alliance_id FROM killmails "
+            "WHERE victim_alliance_id IS NOT NULL "
+            "AND (victim_alliance_name IS NULL OR victim_alliance_name='')"
+        ).fetchall()
+        all_ids.update(r["victim_alliance_id"] for r in rows if r["victim_alliance_id"])
+        rows = conn.execute(
+            "SELECT DISTINCT corporation_id FROM attackers "
+            "WHERE corporation_id IS NOT NULL "
+            "AND (corporation_name IS NULL OR corporation_name='')"
+        ).fetchall()
+        all_ids.update(r["corporation_id"] for r in rows if r["corporation_id"])
+        rows = conn.execute(
+            "SELECT DISTINCT alliance_id FROM attackers "
+            "WHERE alliance_id IS NOT NULL "
+            "AND (alliance_name IS NULL OR alliance_name='')"
+        ).fetchall()
+        all_ids.update(r["alliance_id"] for r in rows if r["alliance_id"])
+
+        if not all_ids:
+            return 0
+
+        id_list = sorted(all_ids)
+        # ESI /universe/names/ 一次最多 1000 个
+        for i in range(0, len(id_list), 1000):
+            batch = id_list[i:i + 1000]
+            try:
+                resp = _req.post(
+                    "https://esi.evetech.net/latest/universe/names/",
+                    json=batch,
+                    headers=_headers,
+                    timeout=30,
+                )
+                if resp.status_code != 200:
+                    continue
+                for item in resp.json():
+                    _id = item.get("id")
+                    _name = item.get("name")
+                    _cat = item.get("category")
+                    if not _id or not _name:
+                        continue
+                    # 根据 category 更新对应表
+                    if _cat == "character":
+                        conn.execute(
+                            "UPDATE attackers SET character_name=? WHERE character_id=? "
+                            "AND (character_name IS NULL OR character_name='')",
+                            (_name, _id),
+                        )
+                        conn.execute(
+                            "UPDATE killmails SET victim_character_name=? WHERE victim_character_id=? "
+                            "AND (victim_character_name IS NULL OR victim_character_name='')",
+                            (_name, _id),
+                        )
+                        _updated += conn.total_changes
+                    elif _cat == "corporation":
+                        conn.execute(
+                            "UPDATE attackers SET corporation_name=? WHERE corporation_id=? "
+                            "AND (corporation_name IS NULL OR corporation_name='')",
+                            (_name, _id),
+                        )
+                        conn.execute(
+                            "UPDATE killmails SET victim_corporation_name=? WHERE victim_corporation_id=? "
+                            "AND (victim_corporation_name IS NULL OR victim_corporation_name='')",
+                            (_name, _id),
+                        )
+                        _updated += conn.total_changes
+                    elif _cat == "alliance":
+                        conn.execute(
+                            "UPDATE attackers SET alliance_name=? WHERE alliance_id=? "
+                            "AND (alliance_name IS NULL OR alliance_name='')",
+                            (_name, _id),
+                        )
+                        conn.execute(
+                            "UPDATE killmails SET victim_alliance_name=? WHERE victim_alliance_id=? "
+                            "AND (victim_alliance_name IS NULL OR victim_alliance_name='')",
+                            (_name, _id),
+                        )
+                        _updated += conn.total_changes
+            except Exception:
+                continue
+
+    return _updated
 
 
 def query_joint_kills_alliances(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:

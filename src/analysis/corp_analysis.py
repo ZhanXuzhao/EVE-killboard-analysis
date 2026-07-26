@@ -82,6 +82,12 @@ class CorpDailyAnalysis:
         if not self.has_data:
             return
 
+        # 尝试回填数据库中角色名为空的记录
+        try:
+            repo.retry_null_names()
+        except Exception:
+            pass
+
         if etype == "alliance":
             self.stats = repo.query_alliance_daily_stats(eid, self.date_from, self.date_to)
             self.active_members = repo.query_alliance_active_members(eid, self.date_from, self.date_to)

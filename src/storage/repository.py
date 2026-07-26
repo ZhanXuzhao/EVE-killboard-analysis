@@ -473,26 +473,46 @@ def query_top_killed_alliances(entity_id: int, date_from: str, date_to: str, lim
 
 
 def query_top_attacker_alliances(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
-    """杀我们最多的联盟 — 击杀本方成员的攻击者所属联盟排行。"""
+    """杀我们最多的联盟 — 击杀本方成员的攻击者所属联盟排行。
+    
+    人数 = 所有参与的击杀人头（不限 final_blow）
+    ISK = 仅统计 final_blow 拿人头的击杀价值（避免重复计数）
+    """
     victim_col = _victim_col(entity_type)
     with get_db() as conn:
         rows = conn.execute(
             f"""
-            SELECT a.alliance_name,
-                   COUNT(*) AS kills,
-                   COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
-            FROM attackers a
-            JOIN killmails k ON k.killmail_id = a.killmail_id
-            WHERE k.killmail_time >= ? AND k.killmail_time < ?
-              AND k.{victim_col} = ?
-              AND a.final_blow = 1
-              AND a.alliance_name IS NOT NULL
-              AND a.alliance_name != ''
-            GROUP BY a.alliance_name
-            ORDER BY kills DESC
+            WITH kills_by_alliance AS (
+                SELECT a.alliance_name,
+                       COUNT(DISTINCT a.killmail_id) AS kills
+                FROM attackers a
+                JOIN killmails k ON k.killmail_id = a.killmail_id
+                WHERE k.killmail_time >= ? AND k.killmail_time < ?
+                  AND k.{victim_col} = ?
+                  AND a.alliance_name IS NOT NULL AND a.alliance_name != ''
+                  AND a.character_id IS NOT NULL
+                GROUP BY a.alliance_name
+            ),
+            isk_by_alliance AS (
+                SELECT a.alliance_name,
+                       COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
+                FROM attackers a
+                JOIN killmails k ON k.killmail_id = a.killmail_id
+                WHERE k.killmail_time >= ? AND k.killmail_time < ?
+                  AND k.{victim_col} = ?
+                  AND a.final_blow = 1
+                  AND a.alliance_name IS NOT NULL AND a.alliance_name != ''
+                GROUP BY a.alliance_name
+            )
+            SELECT k.alliance_name,
+                   k.kills,
+                   COALESCE(i.total_isk, 0) AS total_isk
+            FROM kills_by_alliance k
+            LEFT JOIN isk_by_alliance i ON k.alliance_name = i.alliance_name
+            ORDER BY k.kills DESC
             LIMIT ?
             """,
-            (date_from, date_to, entity_id, limit),
+            (date_from, date_to, entity_id, date_from, date_to, entity_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 

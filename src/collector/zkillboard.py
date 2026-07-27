@@ -1,6 +1,7 @@
 """zKillboard API 客户端 — 获取并解析击杀数据。"""
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import requests
@@ -418,6 +419,9 @@ def fetch_entity_kills(
     """拉取军团/联盟在最近 N 秒内的击杀数据（自动翻页），返回数据和完整性标志。"""
     get_fn = get_alliance_kills if entity_type == "alliance" else get_corporation_kills
 
+    # 计算时间下界：只保留不早于 (now - past_seconds) 的数据
+    _cutoff = datetime.now(timezone.utc) - timedelta(seconds=past_seconds)
+
     all_kills = []
     page = 1
     complete = True
@@ -431,13 +435,42 @@ def fetch_entity_kills(
         if not kills:
             break
 
-        all_kills.extend(k for k in kills if k is not None)
+        # 过滤空值并检查时间下界
+        valid_kills = [k for k in kills if k is not None]
+
+        # zKillboard 按 killmail_time 降序排列，检查本页最老数据是否已超出 range
+        # 如果最后一页最后一击已经早于时间下界，提前停止翻页
+        if valid_kills:
+            oldest = valid_kills[-1]
+            km_time = oldest.get("killmail_time")
+            if km_time:
+                try:
+                    km_dt = datetime.fromisoformat(km_time.replace("Z", "+00:00"))
+                    if km_dt.tzinfo is None:
+                        km_dt = km_dt.replace(tzinfo=timezone.utc)
+                    if km_dt < _cutoff:
+                        # 只保留在时间范围内的数据
+                        valid_kills = [k for k in valid_kills
+                                       if datetime.fromisoformat(
+                                           k["killmail_time"].replace("Z", "+00:00")
+                                       ).replace(tzinfo=timezone.utc) >= _cutoff]
+                        all_kills.extend(valid_kills)
+                        if on_progress:
+                            on_progress(page, len(valid_kills))
+                        complete = True
+                        break
+                except Exception:
+                    pass
+
+        all_kills.extend(valid_kills)
         if on_progress:
             on_progress(page, len(kills))
 
         # 翻页：zKillboard 首页可能 <200 但还有下一页
-        # 策略：至少试 2 页；之后 <200 才停；最多 5 页防超时
-        if page >= 5:
+        # 策略：至少试 2 页；之后 <200 才停；最多 100 页防超时
+        if page >= 100:
+            if len(kills) >= 200:
+                complete = False  # 可能还有更多页未拉取
             break
         if page >= 2 and len(kills) < 200:
             break

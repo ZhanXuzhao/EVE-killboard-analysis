@@ -395,15 +395,25 @@ def load_data(date_from, date_to, status):
             status.update(label="数据加载完成（缓存有效）", state="complete")
             return True
 
-    # 计算回溯秒数：向上取整到天的整倍数（避免 zKillboard 某些秒数返回空的 bug）
+    # 计算回溯秒数：zKillboard API 最大支持 604800 秒（7天）
+    # 注意：pastSeconds 是相对"当前时间"的回溯，不是指定日期范围
+    ZKILL_MAX_PAST = 604800
     start_dt = datetime.fromisoformat(date_from)
     if start_dt.tzinfo is None:
         start_dt = start_dt.replace(tzinfo=timezone.utc)
     now = datetime.now(timezone.utc)
-    _past_sec = int((now - start_dt).total_seconds()) + 86400
-    _past_sec = ((_past_sec + 86399) // 86400) * 86400  # 向上取整到天的整倍数
-    if _past_sec > 604800:
-        _past_sec = 604800
+
+    # 计算从 date_from 到 now 的秒数，加上小缓冲（1小时）避免边界问题
+    _past_sec = int((now - start_dt).total_seconds()) + 3600
+    # 向上取整到天的整倍数（避免 zKillboard 某些秒数返回空的 bug）
+    _past_sec = ((_past_sec + 86399) // 86400) * 86400
+    if _past_sec > ZKILL_MAX_PAST:
+        _past_sec = ZKILL_MAX_PAST
+
+    # 如果需要的数据早于 API 最大回溯范围，给出提示
+    days_needed = (now - start_dt).days
+    if days_needed > 7:
+        status.write(f"⚠️ 所选周期起始于 {days_needed} 天前，超出 zKillboard API 最大回溯范围（7天），早期数据可能无法获取")
 
     # 步骤 2: 拉取击杀列表
     with _step_timer(status, 2, total, "从 zKillboard 拉取击杀列表"):

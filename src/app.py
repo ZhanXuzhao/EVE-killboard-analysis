@@ -553,13 +553,13 @@ def load_data(date_from, date_to, status):
         return True
 
     # 步骤 3: ESI 名称解析（角色/军团/联盟/舰船）
-    with _step_timer(status, 3, total, "ESI 名称解析（角色/军团/联盟/舰船）"):
+    with _step_timer(status, 3, total, f"ESI 名称解析（角色/军团/联盟/舰船）（{len(results)} 条）"):
         from src.collector.zkillboard import _enrich_killmail_names
         raw_kills = [r["killmail"] for r in results]
         _enrich_killmail_names(raw_kills)
 
     # 步骤 4: ESI 星域解析（星系→星域）
-    with _step_timer(status, 4, total, "ESI 星域解析（星系→星域）"):
+    with _step_timer(status, 4, total, f"ESI 星域解析（星系→星域）（{len(results)} 条）"):
         from src.collector.zkillboard import _enrich_system_regions
         raw_kills = [r["killmail"] for r in results]
         _enrich_system_regions(raw_kills)
@@ -591,7 +591,7 @@ def load_data(date_from, date_to, status):
     status.write(f"   ↳ 拉取{'完整' if complete else '不完整（可能还有下一页）'}")
 
     # 步骤 6: 名称重试（在分析阶段执行）
-    with _step_timer(status, 6, total, "ESI 名称重试回填"):
+    with _step_timer(status, 6, total, f"ESI 名称重试回填（{len(results)} 条）"):
         pass
 
     status._c.empty()

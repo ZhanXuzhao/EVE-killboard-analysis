@@ -432,6 +432,7 @@ def load_data(date_from, date_to, status):
             _next = _day + timedelta(days=1)
             upsert_fetch_log(entity_id, etype, _day.isoformat(), _next.isoformat(), 0, True)
             _day = _next
+        upsert_fetch_log(entity_id, etype, date_from, date_to, 0, True)
         status.write("   ↳ 无数据")
         status.update(label="该时段无击杀记录", state="complete")
         return True
@@ -464,6 +465,8 @@ def load_data(date_from, date_to, status):
         _day_to = _next.isoformat()
         upsert_fetch_log(entity_id, etype, _day_from, _day_to, 0 if not results else saved + skipped, complete)
         _day = _next
+    # 同时存一份精确范围，供 is_cache_valid 精确匹配
+    upsert_fetch_log(entity_id, etype, date_from, date_to, saved + skipped, complete)
     status.write(f"   ↳ 拉取{'完整' if complete else '不完整（可能还有下一页）'}")
 
     # 步骤 6: 名称重试（在分析阶段执行）

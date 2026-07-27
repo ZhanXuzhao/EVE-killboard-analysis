@@ -11,6 +11,12 @@ from src.config import (
     REQUEST_TIMEOUT,
     USER_AGENT,
 )
+from src.storage.database import (
+    batch_get_id_names,
+    batch_get_system_regions,
+    batch_set_id_names,
+    set_system_region,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -64,184 +70,104 @@ def _batch_resolve_ids(id_batch: list[int]) -> dict[int, str]:
     return {}
 
 
-# ── 星系→星域 本地缓存 ──────────────────────────────────
-
-_SYSTEM_REGION_CACHE: dict[int, str] = {}
-_SYSTEM_REGION_CACHE_LOADED = False
-
-
-def _load_system_region_cache():
-    """从 SQLite 加载星系→星域缓存到内存。"""
-    global _SYSTEM_REGION_CACHE, _SYSTEM_REGION_CACHE_LOADED
-    if _SYSTEM_REGION_CACHE_LOADED:
-        return
-    _SYSTEM_REGION_CACHE.clear()
-    try:
-        from src.storage.database import get_db_read
-        with get_db_read() as conn:
-            rows = conn.execute(
-                "SELECT system_id, region_name FROM system_region_cache"
-            ).fetchall()
-            for row in rows:
-                _SYSTEM_REGION_CACHE[row["system_id"]] = row["region_name"]
-    except Exception as e:
-        logger.warning(f"加载星域缓存失败: {e}")
-    _SYSTEM_REGION_CACHE_LOADED = True
-
-
-def _save_system_region_cache():
-    """将内存中的星系→星域缓存写入 SQLite。"""
-    if not _SYSTEM_REGION_CACHE:
-        return
-    try:
-        from src.storage.database import get_db_write
-        with get_db_write() as conn:
-            conn.executemany(
-                "INSERT OR REPLACE INTO system_region_cache (system_id, region_name) VALUES (?, ?)",
-                list(_SYSTEM_REGION_CACHE.items()),
-            )
-    except Exception as e:
-        logger.warning(f"保存星域缓存失败: {e}")
-
-
-# ── 通用 ID→名称 本地缓存 ───────────────────────────────
-
-_ID_NAME_CACHE: dict[int, str] = {}
-_ID_NAME_CACHE_LOADED = False
-
-
-def _load_id_name_cache():
-    """从 SQLite 加载 ID→名称缓存到内存。"""
-    global _ID_NAME_CACHE, _ID_NAME_CACHE_LOADED
-    if _ID_NAME_CACHE_LOADED:
-        return
-    _ID_NAME_CACHE.clear()
-    try:
-        from src.storage.database import get_db_read
-        with get_db_read() as conn:
-            rows = conn.execute(
-                "SELECT entity_id, name FROM id_name_cache"
-            ).fetchall()
-            for row in rows:
-                _ID_NAME_CACHE[row["entity_id"]] = row["name"]
-    except Exception as e:
-        logger.warning(f"加载 ID 名称缓存失败: {e}")
-    _ID_NAME_CACHE_LOADED = True
-
-
-def _save_id_name_cache():
-    """将内存中的 ID→名称缓存写入 SQLite。"""
-    if not _ID_NAME_CACHE:
-        return
-    try:
-        from src.storage.database import get_db_write
-        with get_db_write() as conn:
-            conn.executemany(
-                "INSERT OR REPLACE INTO id_name_cache (entity_id, name) VALUES (?, ?)",
-                list(_ID_NAME_CACHE.items()),
-            )
-    except Exception as e:
-        logger.warning(f"保存 ID 名称缓存失败: {e}")
+# ── 星系→星域 缓存操作（直连 SQLite，无全局状态） ──────
 
 
 def _enrich_system_regions(kills: list[dict]) -> list[dict]:
     """解析星系 ID 对应的星域名称并注入。
 
     流程：星系 → 星座(获取 region_id) → 星域(获取名称)
-    使用 SQLite 缓存加速后续查询。
+    所有缓存直接读写 SQLite，无全局内存变量，线程安全。
     """
-    _load_system_region_cache()
-
-    # 收集所有唯一星系 ID（排除已缓存的）
-    system_ids = set()
+    # 收集所有唯一星系 ID
+    all_system_ids = set()
     for km in kills:
         sid = km.get("solar_system_id")
-        if sid and sid not in _SYSTEM_REGION_CACHE:
-            system_ids.add(sid)
+        if sid:
+            all_system_ids.add(sid)
 
-    if not system_ids and _SYSTEM_REGION_CACHE:
-        # 全部已缓存，直接注入
-        for km in kills:
-            sid = km.get("solar_system_id")
-            if sid in _SYSTEM_REGION_CACHE:
-                km["solar_system_region_name"] = _SYSTEM_REGION_CACHE[sid]
+    if not all_system_ids:
         return kills
 
-    system_list = sorted(system_ids) if system_ids else []
+    # 从 SQLite 批量查询已缓存的星系→星域
+    cached = batch_get_system_regions(sorted(all_system_ids))
 
-    # 步骤1: 获取每个星系的 constellation_id
-    sys_to_const: dict[int, int] = {}  # system_id -> constellation_id
-    for sid in system_list:
-        try:
-            resp = _session.get(
-                f"https://esi.evetech.net/latest/universe/systems/{sid}/",
-                timeout=REQUEST_TIMEOUT,
-            )
-            resp.raise_for_status()
-            info = resp.json()
-            cid = info.get("constellation_id")
-            if cid:
-                sys_to_const[sid] = cid
-        except Exception as e:
-            logger.warning(f"ESI 星系查询失败 (system={sid}): {e}")
+    # 找出未缓存的星系 ID
+    uncached = sorted(sid for sid in all_system_ids if sid not in cached)
 
-    if not sys_to_const:
-        return kills
+    if uncached:
+        # 步骤1: 获取每个星系的 constellation_id
+        sys_to_const: dict[int, int] = {}
+        for sid in uncached:
+            try:
+                resp = _session.get(
+                    f"https://esi.evetech.net/latest/universe/systems/{sid}/",
+                    timeout=REQUEST_TIMEOUT,
+                )
+                resp.raise_for_status()
+                info = resp.json()
+                cid = info.get("constellation_id")
+                if cid:
+                    sys_to_const[sid] = cid
+            except Exception as e:
+                logger.warning(f"ESI 星系查询失败 (system={sid}): {e}")
 
-    # 步骤2: 获取每个星座的 region_id
-    const_ids = set(sys_to_const.values())
-    const_to_region: dict[int, int] = {}  # constellation_id -> region_id
-    for cid in sorted(const_ids):
-        try:
-            resp = _session.get(
-                f"https://esi.evetech.net/latest/universe/constellations/{cid}/",
-                timeout=REQUEST_TIMEOUT,
-            )
-            resp.raise_for_status()
-            info = resp.json()
-            rid = info.get("region_id")
-            if rid:
-                const_to_region[cid] = rid
-        except Exception as e:
-            logger.warning(f"ESI 星座查询失败 (constellation={cid}): {e}")
+        if sys_to_const:
+            # 步骤2: 获取每个星座的 region_id
+            const_ids = set(sys_to_const.values())
+            const_to_region: dict[int, int] = {}
+            for cid in sorted(const_ids):
+                try:
+                    resp = _session.get(
+                        f"https://esi.evetech.net/latest/universe/constellations/{cid}/",
+                        timeout=REQUEST_TIMEOUT,
+                    )
+                    resp.raise_for_status()
+                    info = resp.json()
+                    rid = info.get("region_id")
+                    if rid:
+                        const_to_region[cid] = rid
+                except Exception as e:
+                    logger.warning(f"ESI 星座查询失败 (constellation={cid}): {e}")
 
-    if not const_to_region:
-        return kills
+            if const_to_region:
+                # 步骤3: 批量解析 region_id → region_name
+                region_ids = set(const_to_region.values())
+                region_name_map: dict[int, str] = {}
+                id_list = sorted(region_ids)
+                for i in range(0, len(id_list), 1000):
+                    batch = id_list[i:i + 1000]
+                    region_name_map.update(_batch_resolve_ids(batch))
 
-    # 步骤3: 批量解析 region_id → region_name
-    region_ids = set(const_to_region.values())
-    region_name_map: dict[int, str] = {}
-    id_list = sorted(region_ids)
-    for i in range(0, len(id_list), 1000):
-        batch = id_list[i:i + 1000]
-        region_name_map.update(_batch_resolve_ids(batch))
+                # 步骤4: 将新结果写入 SQLite（逐条写入，不影响其他并发读）
+                for sid in uncached:
+                    cid = sys_to_const.get(sid)
+                    rid = const_to_region.get(cid) if cid else None
+                    rname = region_name_map.get(rid) if rid else None
+                    if rname:
+                        cached[sid] = rname
+                        try:
+                            set_system_region(sid, rname)
+                        except Exception as e:
+                            logger.warning(f"写入星域缓存失败 (system={sid}): {e}")
 
-    # 步骤4: 注入 region_name 到每个击杀（优先从缓存）
+    # 注入 region_name 到每个击杀
     for km in kills:
         sid = km.get("solar_system_id")
-        if sid in _SYSTEM_REGION_CACHE:
-            km["solar_system_region_name"] = _SYSTEM_REGION_CACHE[sid]
-        elif sid in sys_to_const:
-            cid = sys_to_const[sid]
-            rid = const_to_region.get(cid)
-            if rid and rid in region_name_map:
-                region_name = region_name_map[rid]
-                km["solar_system_region_name"] = region_name
-                _SYSTEM_REGION_CACHE[sid] = region_name
-
-    if sys_to_const:
-        _save_system_region_cache()
+        if sid in cached:
+            km["solar_system_region_name"] = cached[sid]
 
     return kills
+
+
+# ── 通用 ID→名称 缓存操作（直连 SQLite，无全局状态） ──
 
 
 def _enrich_killmail_names(kills: list[dict]) -> list[dict]:
     """批量解析击杀数据中所有 ID 的名称并注入。
 
-    使用本地缓存避免重复 ESI 查询。
+    所有缓存直接读写 SQLite，无全局内存变量，线程安全。
     """
-    _load_id_name_cache()
-
     # 收集所有需要解析的 ID
     all_ids: set[int] = set()
 
@@ -269,24 +195,24 @@ def _enrich_killmail_names(kills: list[dict]) -> list[dict]:
     if not all_ids:
         return kills
 
-    # 从缓存中取，只查询未缓存的 ID
-    name_map: dict[int, str] = {}
-    uncached = [i for i in all_ids if i not in _ID_NAME_CACHE]
+    # 从 SQLite 批量查询已缓存的名称
+    id_list = sorted(all_ids)
+    name_map: dict[int, str] = batch_get_id_names(id_list)
 
+    # 找出未缓存的 ID，调用 ESI 批量解析
+    uncached = [i for i in id_list if i not in name_map]
     if uncached:
-        id_list = sorted(uncached)
-        for i in range(0, len(id_list), 1000):
-            batch = id_list[i:i + 1000]
-            name_map.update(_batch_resolve_ids(batch))
-        # 缓存新结果
-        if name_map:
-            _ID_NAME_CACHE.update(name_map)
-            _save_id_name_cache()
-
-    # 合并缓存
-    for i in all_ids:
-        if i in _ID_NAME_CACHE:
-            name_map[i] = _ID_NAME_CACHE[i]
+        new_names: dict[int, str] = {}
+        for i in range(0, len(uncached), 1000):
+            batch = uncached[i:i + 1000]
+            new_names.update(_batch_resolve_ids(batch))
+        if new_names:
+            # 立即写入 SQLite（其他并发读立即可见新缓存）
+            try:
+                batch_set_id_names(new_names)
+            except Exception as e:
+                logger.warning(f"写入 ID 名称缓存失败: {e}")
+            name_map.update(new_names)
 
     # 注入名称
     for km in kills:

@@ -430,7 +430,7 @@ def _render_chart_with_copy(fig, bil_labels, session_key, btn_label="◀"):
             st.rerun(scope="fragment")
     if _show:
         with _rcol_text:
-            _labels = [s.replace("(", " ").replace(")", "") for s in bil_labels]
+            _labels = [s.replace("(", " ").replace(")", "") for s in bil_labels][::-1]
             _text = "\n".join(_labels)
             st.markdown(
                 f"<div style='font-size:13px;line-height:2;user-select:text;"
@@ -884,7 +884,7 @@ if entity_id is not None:
                         st.rerun(scope="fragment")
                 if _show:
                     with _rcol_text:
-                        _labels = _chart_df["solar_system_region_name_bil"].str.replace("(", " ").str.replace(")", "").tolist()
+                        _labels = _chart_df["solar_system_region_name_bil"].str.replace("(", " ").str.replace(")", "").tolist()[::-1]
                         _text = "\n".join(_labels)
                         st.markdown(
                             f"<div style='font-size:13px;line-height:2;user-select:text;"

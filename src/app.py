@@ -10,6 +10,7 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 import streamlit as st
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, timezone
@@ -314,6 +315,25 @@ with st.sidebar:
 6. ⚠️ zKillboard API 最多支持查询 **7 天以内** 的数据
         """
     )
+
+
+
+# ── 中文名称辅助 ────────────────────────────────────────
+
+def _apply_zh_ship_names(df, type_col: str, name_col: str):
+    """将 DataFrame 中的舰船英文名替换为中文名（查 type_translations）。"""
+    from src.storage.database import batch_get_names_zh
+    ids = df[type_col].dropna().unique().tolist()
+    if not ids:
+        return df
+    zh_map = batch_get_names_zh([int(x) for x in ids])
+    if zh_map:
+        df[name_col] = df.apply(
+            lambda r: zh_map.get(int(r[type_col]), r[name_col])
+            if pd.notna(r[type_col]) else r[name_col],
+            axis=1,
+        )
+    return df
 
 
 
@@ -905,6 +925,7 @@ if entity_id is not None:
         st.subheader("🚢 击杀舰船")
         if "top_kill_ships" in dfs:
             df = dfs["top_kill_ships"].copy()
+            df = _apply_zh_ship_names(df, "ship_type_id", "ship_name")
             df["isk_label"] = df["total_isk"].apply(_fmt)
             df["display"] = df.apply(
                 lambda r: f"{r['ship_name']} ({r['count']})", axis=1
@@ -930,6 +951,7 @@ if entity_id is not None:
         st.subheader("💀 损失舰船")
         if "top_loss_ships" in dfs:
             df = dfs["top_loss_ships"].copy()
+            df = _apply_zh_ship_names(df, "victim_ship_type_id", "victim_ship_name")
             df["isk_label"] = df["total_isk"].apply(_fmt)
             df["display"] = df.apply(
                 lambda r: f"{r['victim_ship_name']} ({r['count']})", axis=1

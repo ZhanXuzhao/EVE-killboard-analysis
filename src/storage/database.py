@@ -137,6 +137,13 @@ def init_db():
                 system_id    INTEGER PRIMARY KEY,
                 region_name  TEXT NOT NULL
             );
+
+            -- 中英文翻译对照表（舰船/物品/星域等）
+            CREATE TABLE IF NOT EXISTS type_translations (
+                type_id   INTEGER PRIMARY KEY,
+                name_zh   TEXT NOT NULL,
+                name_en   TEXT
+            );
         """)
 
         # 兼容旧数据库：新增列
@@ -148,6 +155,38 @@ def init_db():
 
     # 迁移旧 JSON 缓存到数据库
     _migrate_json_cache()
+
+    # 从种子文件初始化 type_translations（空表时自动加载）
+    _load_type_translations_seed()
+
+
+def _load_type_translations_seed():
+    """如果 type_translations 为空，从种子 JSON 文件初始化。"""
+    seed_path = DATA_DIR / "type_translations_seed.json"
+    if not seed_path.exists():
+        return
+    try:
+        with get_db_read() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM type_translations").fetchone()[0]
+        if count > 0:
+            return  # 已有数据，跳过
+        logger.info("📦 从种子文件初始化 type_translations ...")
+        with open(seed_path, encoding="utf-8") as f:
+            data = json.load(f)
+        rows = []
+        for tid, vals in data.items():
+            if isinstance(vals, dict):
+                rows.append((int(tid), vals.get("zh", ""), vals.get("en", "")))
+            elif isinstance(vals, list) and len(vals) >= 2:
+                rows.append((int(tid), vals[0], vals[1]))
+        with get_db_write() as conn:
+            conn.executemany(
+                "INSERT OR IGNORE INTO type_translations (type_id, name_zh, name_en) VALUES (?, ?, ?)",
+                rows,
+            )
+        logger.info(f"   ✅ 加载 {len(rows)} 条翻译数据")
+    except Exception as e:
+        logger.warning(f"加载翻译种子文件失败: {e}")
 
 
 def _migrate_json_cache():
@@ -289,3 +328,29 @@ def set_system_region(system_id: int, region_name: str):
             "INSERT OR REPLACE INTO system_region_cache (system_id, region_name) VALUES (?, ?)",
             (system_id, region_name),
         )
+
+
+# ── 中英文翻译查询 ─────────────────────────────────────
+
+
+def get_name_zh(type_id: int) -> Optional[str]:
+    """查询 type_id 对应的中文名称，无则返回 None。"""
+    with get_db_read() as conn:
+        row = conn.execute(
+            "SELECT name_zh FROM type_translations WHERE type_id = ?",
+            (type_id,),
+        ).fetchone()
+        return row["name_zh"] if row else None
+
+
+def batch_get_names_zh(type_ids: list[int]) -> dict[int, str]:
+    """批量查询多个 type_id 的中文名称。"""
+    if not type_ids:
+        return {}
+    placeholders = ",".join("?" * len(type_ids))
+    with get_db_read() as conn:
+        rows = conn.execute(
+            f"SELECT type_id, name_zh FROM type_translations WHERE type_id IN ({placeholders})",
+            type_ids,
+        ).fetchall()
+        return {row["type_id"]: row["name_zh"] for row in rows}

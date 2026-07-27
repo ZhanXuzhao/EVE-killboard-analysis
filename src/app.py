@@ -21,18 +21,14 @@ from src.analysis.corp_analysis import analyze_entity_yesterday, _get_date_range
 
 
 def _save_history(entity_id, entity_name, entity_type, ticker=""):
-    """保存查询历史到 session_state 和本地文件。"""
+    """保存查询历史到 session_state 并通过 URL 参数同步到浏览器。"""
+    import json
     _h = st.session_state.get("query_history", [])
     _h[:] = [x for x in _h if not (x["id"] == entity_id and x.get("type") == (entity_type or "corporation"))]
     _h.insert(0, {"id": entity_id, "name": entity_name, "type": entity_type or "corporation", "ticker": ticker})
     st.session_state.query_history = _h[:10]
-    try:
-        import json
-        _hf = Path(__file__).resolve().parent.parent / "data" / "query_history.json"
-        with open(_hf, "w", encoding="utf-8") as _f:
-            json.dump(st.session_state.query_history, _f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+    # 通过 URL query param 持久化到浏览器（不同用户不同 URL，历史互不干扰）
+    st.query_params["qh"] = json.dumps(st.session_state.query_history, ensure_ascii=False)
     _debug(f"save_history: {entity_name} <{ticker}> pos=0")
 
 
@@ -94,15 +90,14 @@ DEFAULT_ENTITY_RESOLVE = (99009163, "Dracarys. <D.C>", "alliance")
 with st.sidebar:
     st.header("⚙️ 设置")
 
-    # ── 查询历史：初始化 ────────────────────────────
+    # ── 查询历史：初始化（从浏览器 URL 参数读取） ────
 
     if "query_history" not in st.session_state:
-        _hist_file = Path(__file__).resolve().parent.parent / "data" / "query_history.json"
-        if _hist_file.exists():
+        import json
+        qh_raw = st.query_params.get("qh")
+        if qh_raw:
             try:
-                import json
-                with open(_hist_file, encoding="utf-8") as _f:
-                    st.session_state.query_history = json.load(_f)
+                st.session_state.query_history = json.loads(qh_raw)
             except Exception:
                 st.session_state.query_history = []
         else:
@@ -110,14 +105,12 @@ with st.sidebar:
 
     if st.query_params.get_all("clear"):
         st.session_state.query_history = []
-        try:
-            import json
-            _hist_file = Path(__file__).resolve().parent.parent / "data" / "query_history.json"
-            with open(_hist_file, "w", encoding="utf-8") as _f:
-                json.dump([], _f)
-        except Exception:
-            pass
         st.query_params.clear()
+        # 同时清除浏览器 localStorage
+        st.markdown(
+            "<script>localStorage.removeItem('eve_query_history');</script>",
+            unsafe_allow_html=True,
+        )
 
     # ── 初始化 session_state ──────────────────────────
 
@@ -284,6 +277,31 @@ with st.sidebar:
                     st.session_state._pending_rerun = True
                     _debug(f"hist_click: {h['name']} <{h.get('ticker','')}>")
 
+    # ── localStorage ↔ URL 参数双向同步 ─────────────
+    # 首次访问时从 localStorage 恢复历史；后续每次自动备份到 localStorage
+    st.markdown(
+        """
+<script>
+(function() {
+    const KEY = 'eve_query_history';
+    const stored = localStorage.getItem(KEY);
+    const url = new URL(window.location);
+    const hasParam = url.searchParams.has('qh');
+
+    if (stored && !hasParam) {
+        // 从 localStorage 恢复 → 设置 URL 参数并刷新
+        url.searchParams.set('qh', stored);
+        window.location.replace(url.toString());
+    } else if (hasParam) {
+        // 将当前 URL 参数备份到 localStorage
+        localStorage.setItem(KEY, url.searchParams.get('qh'));
+    }
+})();
+</script>
+""",
+        unsafe_allow_html=True,
+    )
+
     st.divider()
     st.markdown("**💡 使用说明**")
     st.markdown(
@@ -392,7 +410,7 @@ def load_data(date_from, date_to, status):
     with _step_timer(status, 1, total, "检查本地缓存"):
         if is_cache_valid(entity_id, etype, date_from, date_to):
             status.write("📦 本地数据有效，跳过 API 请求")
-            status.update(label="数据加载完成（缓存有效）", state="complete")
+            status.update(label="数据分析中...", state="running")
             status._c.empty()
             return True
 
@@ -522,8 +540,7 @@ if entity_id is not None:
             )
 
         _total_elapsed = time.time() - _total_start
-        status.write(f"📊 所有步骤总耗时: {_total_elapsed:.1f}s")
-        status.update(label="数据分析完成 ✓", state="complete")
+        status.update(label=f"数据分析完成 ✓ 总耗时: {_total_elapsed:.1f}s", state="complete")
         st.session_state.data_loaded = True
     else:
         # 后续 rerun：直接从数据库读取分析结果

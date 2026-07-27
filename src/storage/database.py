@@ -12,19 +12,27 @@ from src.config import DATA_DIR, DB_PATH
 logger = logging.getLogger(__name__)
 
 
-def get_connection() -> sqlite3.Connection:
-    """获取数据库连接（自动提交模式）。"""
+def get_write_connection() -> sqlite3.Connection:
+    """获取读写数据库连接（适用于 INSERT/UPDATE/DELETE）。"""
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
+
+
+def get_read_connection() -> sqlite3.Connection:
+    """获取只读数据库连接（适用于 SELECT 查询，不阻塞写入）。"""
+    conn = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
     return conn
 
 
 @contextmanager
-def get_db():
-    """获取数据库连接的上下文管理器。"""
-    conn = get_connection()
+def get_db_write():
+    """获取读写数据库连接的上下文管理器（用于写入，自动提交/回滚）。"""
+    conn = get_write_connection()
     try:
         yield conn
         conn.commit()
@@ -35,9 +43,19 @@ def get_db():
         conn.close()
 
 
+@contextmanager
+def get_db_read():
+    """获取只读数据库连接的上下文管理器（用于查询，不提交，不阻塞写入）。"""
+    conn = get_read_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
 def init_db():
     """初始化数据库表结构。"""
-    with get_db() as conn:
+    with get_db_write() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS killmails (
                 killmail_id          INTEGER PRIMARY KEY,
@@ -157,7 +175,7 @@ def _migrate_single_cache(table: str, json_file: Path, key_col: str, val_col: st
             data = json.load(f)
         if not data:
             return
-        with get_db() as conn:
+        with get_db_write() as conn:
             count = 0
             for k, v in data.items():
                 try:
@@ -186,7 +204,7 @@ def _migrate_single_cache(table: str, json_file: Path, key_col: str, val_col: st
 
 def get_id_name(entity_id: int) -> Optional[str]:
     """从缓存中查询单个 ID 的名称。"""
-    with get_db() as conn:
+    with get_db_read() as conn:
         row = conn.execute(
             "SELECT name FROM id_name_cache WHERE entity_id = ?",
             (entity_id,),
@@ -196,7 +214,7 @@ def get_id_name(entity_id: int) -> Optional[str]:
 
 def has_id_name(entity_id: int) -> bool:
     """检查 ID 是否在缓存中。"""
-    with get_db() as conn:
+    with get_db_read() as conn:
         row = conn.execute(
             "SELECT 1 FROM id_name_cache WHERE entity_id = ?",
             (entity_id,),
@@ -209,7 +227,7 @@ def batch_get_id_names(entity_ids: list[int]) -> dict[int, str]:
     if not entity_ids:
         return {}
     placeholders = ",".join("?" * len(entity_ids))
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             f"SELECT entity_id, name FROM id_name_cache WHERE entity_id IN ({placeholders})",
             entity_ids,
@@ -221,7 +239,7 @@ def batch_set_id_names(name_map: dict[int, str]):
     """批量写入 ID→名称到缓存。"""
     if not name_map:
         return
-    with get_db() as conn:
+    with get_db_write() as conn:
         conn.executemany(
             "INSERT OR REPLACE INTO id_name_cache (entity_id, name) VALUES (?, ?)",
             list(name_map.items()),
@@ -233,7 +251,7 @@ def batch_set_id_names(name_map: dict[int, str]):
 
 def get_system_region(system_id: int) -> Optional[str]:
     """从缓存中查询星系对应的星域名称。"""
-    with get_db() as conn:
+    with get_db_read() as conn:
         row = conn.execute(
             "SELECT region_name FROM system_region_cache WHERE system_id = ?",
             (system_id,),
@@ -243,7 +261,7 @@ def get_system_region(system_id: int) -> Optional[str]:
 
 def has_system_region(system_id: int) -> bool:
     """检查星系是否在缓存中。"""
-    with get_db() as conn:
+    with get_db_read() as conn:
         row = conn.execute(
             "SELECT 1 FROM system_region_cache WHERE system_id = ?",
             (system_id,),
@@ -256,7 +274,7 @@ def batch_get_system_regions(system_ids: list[int]) -> dict[int, str]:
     if not system_ids:
         return {}
     placeholders = ",".join("?" * len(system_ids))
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             f"SELECT system_id, region_name FROM system_region_cache WHERE system_id IN ({placeholders})",
             system_ids,
@@ -266,7 +284,7 @@ def batch_get_system_regions(system_ids: list[int]) -> dict[int, str]:
 
 def set_system_region(system_id: int, region_name: str):
     """写入星系→星域到缓存。"""
-    with get_db() as conn:
+    with get_db_write() as conn:
         conn.execute(
             "INSERT OR REPLACE INTO system_region_cache (system_id, region_name) VALUES (?, ?)",
             (system_id, region_name),

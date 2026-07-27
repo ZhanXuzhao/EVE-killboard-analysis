@@ -427,6 +427,7 @@ def _render_chart_with_copy(fig, bil_labels, session_key, btn_label="◀"):
     with _rcol_btn:
         if st.button(btn_label, key=f"{session_key}_btn", help="点击展开/收起列表（可选中复制）"):
             st.session_state[session_key] = not _show
+            st.rerun(scope="fragment")
     if _show:
         with _rcol_text:
             _labels = [s.replace("(", " ").replace(")", "") for s in bil_labels]
@@ -880,6 +881,7 @@ if entity_id is not None:
                 with _rcol_btn:
                     if st.button("◀", key="region_copy_btn", help="点击展开/收起星域列表（可选中复制）"):
                         st.session_state._show_region_text = not _show
+                        st.rerun(scope="fragment")
                 if _show:
                     with _rcol_text:
                         _labels = _chart_df["solar_system_region_name_bil"].str.replace("(", " ").str.replace(")", "").tolist()

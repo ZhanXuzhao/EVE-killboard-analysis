@@ -948,7 +948,7 @@ if entity_id is not None:
                 textposition="outside",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig, width="stretch")
+            _render_chart_with_copy(fig, _chart_df["solar_system_name"].tolist(), "_show_system", "◀")
         else:
             st.info("暂无星系数据")
 
@@ -964,8 +964,9 @@ if entity_id is not None:
             df["display"] = df.apply(
                 lambda r: f"{r['victim_alliance_name']} ({r['kills']})", axis=1
             )
+            _chart_df = df.head(10).iloc[::-1]
             fig = px.bar(
-                df.head(10).iloc[::-1],
+                _chart_df,
                 x="kills",
                 y="display",
                 orientation="h",
@@ -977,7 +978,7 @@ if entity_id is not None:
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
             fig.update_traces(textposition="outside")
-            st.plotly_chart(fig, width="stretch")
+            _render_chart_with_copy(fig, _chart_df["victim_alliance_name"].tolist(), "_show_killed_alliances", "◀")
         else:
             st.info("暂无数据")
 
@@ -989,8 +990,9 @@ if entity_id is not None:
             df["display"] = df.apply(
                 lambda r: f"{r['alliance_name']} ({r['kills']})", axis=1
             )
+            _chart_df = df.head(10).iloc[::-1]
             fig = px.bar(
-                df.head(10).iloc[::-1],
+                _chart_df,
                 x="kills",
                 y="display",
                 orientation="h",
@@ -1002,7 +1004,7 @@ if entity_id is not None:
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
             fig.update_traces(textposition="outside")
-            st.plotly_chart(fig, width="stretch")
+            _render_chart_with_copy(fig, _chart_df["alliance_name"].tolist(), "_show_attacker_alliances", "◀")
         else:
             st.info("暂无数据")
 
@@ -1018,8 +1020,9 @@ if entity_id is not None:
             df["display"] = df.apply(
                 lambda r: f"{r['alliance_name']}  ({r['joint_kills']}次)", axis=1
             )
+            _chart_df = df.head(10).iloc[::-1]
             fig = px.bar(
-                df.head(10).iloc[::-1],
+                _chart_df,
                 x="joint_kills",
                 y="display",
                 orientation="h",
@@ -1035,7 +1038,7 @@ if entity_id is not None:
                 xaxis_title="联合击杀数",
             )
             fig.update_traces(textposition="outside")
-            st.plotly_chart(fig, width="stretch")
+            _render_chart_with_copy(fig, _chart_df["alliance_name"].tolist(), "_show_joint_kills", "◀")
         else:
             st.info("暂无联合击杀数据")
 
@@ -1049,8 +1052,9 @@ if entity_id is not None:
             df["display"] = df.apply(
                 lambda r: f"{r['alliance_name']}  ({r['participant_count']}人)", axis=1
             )
+            _chart_df = df.iloc[::-1]
             fig = px.bar(
-                df.iloc[::-1],
+                _chart_df,
                 x="participant_count",
                 y="display",
                 orientation="h",
@@ -1067,7 +1071,7 @@ if entity_id is not None:
                 coloraxis_colorbar_title="合作击杀数",
             )
             fig.update_traces(textposition="outside")
-            st.plotly_chart(fig, width="stretch")
+            _render_chart_with_copy(fig, _chart_df["alliance_name"].tolist(), "_show_joint_participants", "◀")
         else:
             st.info("暂无联合参战数据")
 

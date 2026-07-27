@@ -139,7 +139,7 @@ def _enrich_system_regions(kills: list[dict]) -> list[dict]:
                     batch = id_list[i:i + 1000]
                     region_name_map.update(_batch_resolve_ids(batch))
 
-                # 步骤4: 将新结果写入 SQLite（逐条写入，不影响其他并发读）
+                # 步骤4: 将新结果（英文名）写入 SQLite
                 for sid in uncached:
                     cid = sys_to_const.get(sid)
                     rid = const_to_region.get(cid) if cid else None
@@ -151,11 +151,35 @@ def _enrich_system_regions(kills: list[dict]) -> list[dict]:
                         except Exception as e:
                             logger.warning(f"写入星域缓存失败 (system={sid}): {e}")
 
-    # 注入 region_name 到每个击杀
+    # 注入 region_name（英文）到每个击杀
     for km in kills:
         sid = km.get("solar_system_id")
         if sid in cached:
             km["solar_system_region_name"] = cached[sid]
+
+    return kills
+    cached_en_names = {cached[s] for s in all_system_ids if s in cached
+                       and cached[s] not in region_zh.values()}
+    if cached_en_names and region_ids:
+        # 对之前已缓存但可能仍是英文的星域，也补查中文
+        for rid in sorted(region_ids):
+            if rid not in region_zh:
+                try:
+                    resp = _session.get(
+                        f"https://esi.evetech.net/latest/universe/regions/{rid}/?language=zh",
+                        timeout=REQUEST_TIMEOUT,
+                    )
+                    resp.raise_for_status()
+                    region_zh[rid] = resp.json().get("name", "")
+                except Exception as e:
+                    logger.warning(f"ESI 补查星域中文名失败 (region={rid}): {e}")
+        # 利用已有的 rid→中文 映射，用英文名反向查找更新 cached
+        en_to_zh = {region_name_map.get(rid): zh for rid, zh in region_zh.items()
+                    if rid in region_name_map and zh}
+        for km in kills:
+            en = km.get("solar_system_region_name")
+            if en in en_to_zh:
+                km["solar_system_region_name"] = en_to_zh[en]
 
     return kills
 

@@ -1022,10 +1022,10 @@ if entity_id is not None:
 
     # ── Row 5: 舰船排行 ───────────────────────────────
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("🚢 击杀舰船")
+    # Row 1: 击杀舰船
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("🚢 击杀舰船（数量）")
         if "top_kill_ships" in dfs:
             df = dfs["top_kill_ships"].copy()
             df = _apply_zh_ship_names(df, "ship_type_id", "ship_name")
@@ -1059,8 +1059,45 @@ if entity_id is not None:
         else:
             st.info("暂无数据")
 
-    with col2:
-        st.subheader("💀 损失舰船")
+    with c2:
+        st.subheader("🚢 击杀舰船（ISK）")
+        if "top_kill_ships_by_isk" in dfs:
+            df_isk = dfs["top_kill_ships_by_isk"].copy()
+            df_isk = _apply_zh_ship_names(df_isk, "ship_type_id", "ship_name")
+            df_isk["isk_label"] = df_isk["total_isk"].apply(_fmt)
+            _chart_df_isk = df_isk.iloc[::-1]
+            _chart_df_isk["display_isk"] = _chart_df_isk.apply(
+                lambda r: f"{r['ship_name']} ({r['isk_label']})", axis=1
+            )
+            fig_isk = px.bar(
+                _chart_df_isk,
+                x="total_isk",
+                y="display_isk",
+                orientation="h",
+                labels={"total_isk": "总 ISK", "display_isk": "舰船"},
+                color="count",
+                color_continuous_scale="Reds",
+                text="isk_label",
+                hover_data={"total_isk": False, "count": False},
+            )
+            fig_isk.update_traces(
+                hovertemplate=(
+                    "<b>%{customdata[1]}</b><br>"
+                    "击杀: %{customdata[0]}<br>"
+                    "ISK: %{x}<extra></extra>"
+                ),
+                customdata=_chart_df_isk[["count", "ship_name_bil"]].values,
+                textposition="outside",
+            )
+            fig_isk.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
+            st.plotly_chart(fig_isk, width="stretch")
+        else:
+            st.info("暂无数据")
+
+    # Row 2: 损失舰船
+    c3, c4 = st.columns(2)
+    with c3:
+        st.subheader("💀 损失舰船（数量）")
         if "top_loss_ships" in dfs:
             df = dfs["top_loss_ships"].copy()
             df = _apply_zh_ship_names(df, "victim_ship_type_id", "victim_ship_name")
@@ -1091,6 +1128,41 @@ if entity_id is not None:
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
             st.plotly_chart(fig, width="stretch")
+        else:
+            st.info("暂无数据")
+
+    with c4:
+        st.subheader("💀 损失舰船（ISK）")
+        if "top_loss_ships_by_isk" in dfs:
+            df_isk = dfs["top_loss_ships_by_isk"].copy()
+            df_isk = _apply_zh_ship_names(df_isk, "victim_ship_type_id", "victim_ship_name")
+            df_isk["isk_label"] = df_isk["total_isk"].apply(_fmt)
+            _chart_df_isk = df_isk.iloc[::-1]
+            _chart_df_isk["display_isk"] = _chart_df_isk.apply(
+                lambda r: f"{r['victim_ship_name']} ({r['isk_label']})", axis=1
+            )
+            fig_isk = px.bar(
+                _chart_df_isk,
+                x="total_isk",
+                y="display_isk",
+                orientation="h",
+                labels={"total_isk": "总 ISK", "display_isk": "舰船"},
+                color="count",
+                color_continuous_scale="Reds",
+                text="isk_label",
+                hover_data={"total_isk": False, "count": False},
+            )
+            fig_isk.update_traces(
+                hovertemplate=(
+                    "<b>%{customdata[1]}</b><br>"
+                    "损失: %{customdata[0]}<br>"
+                    "ISK: %{x}<extra></extra>"
+                ),
+                customdata=_chart_df_isk[["count", "victim_ship_name_bil"]].values,
+                textposition="outside",
+            )
+            fig_isk.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
+            st.plotly_chart(fig_isk, width="stretch")
         else:
             st.info("暂无数据")
 

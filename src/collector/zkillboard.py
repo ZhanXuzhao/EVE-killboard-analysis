@@ -484,10 +484,6 @@ def fetch_entity_kills(
     if on_progress:
         on_progress(page, 0)
 
-    # ESI 名称解析 & 星域解析
-    all_kills = _enrich_killmail_names(all_kills)
-    all_kills = _enrich_system_regions(all_kills)
-
     results = []
     for km in all_kills:
         km_id = km.get("killmail_id")

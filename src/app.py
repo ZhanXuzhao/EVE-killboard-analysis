@@ -393,6 +393,7 @@ def load_data(date_from, date_to, status):
         if is_cache_valid(entity_id, etype, date_from, date_to):
             status.write("📦 本地数据有效，跳过 API 请求")
             status.update(label="数据加载完成（缓存有效）", state="complete")
+            status._c.empty()
             return True
 
     # 计算回溯秒数：zKillboard API 最大支持 604800 秒（7天）
@@ -445,13 +446,20 @@ def load_data(date_from, date_to, status):
         upsert_fetch_log(entity_id, etype, date_from, date_to, 0, True)
         status.write("   ↳ 无数据")
         status.update(label="该时段无击杀记录", state="complete")
+        status._c.empty()
         return True
 
-    # 步骤 3-4: ESI 解析（在 fetch 内部已完成，仅打时间戳）
+    # 步骤 3: ESI 名称解析（角色/军团/联盟/舰船）
     with _step_timer(status, 3, total, "ESI 名称解析（角色/军团/联盟/舰船）"):
-        pass
+        from src.collector.zkillboard import _enrich_killmail_names
+        raw_kills = [r["killmail"] for r in results]
+        _enrich_killmail_names(raw_kills)
+
+    # 步骤 4: ESI 星域解析（星系→星域）
     with _step_timer(status, 4, total, "ESI 星域解析（星系→星域）"):
-        pass
+        from src.collector.zkillboard import _enrich_system_regions
+        raw_kills = [r["killmail"] for r in results]
+        _enrich_system_regions(raw_kills)
 
     # 步骤 5: 存入 SQLite
     with _step_timer(status, 5, total, f"存入 SQLite 数据库（{len(results)} 条）"):
@@ -483,6 +491,7 @@ def load_data(date_from, date_to, status):
     with _step_timer(status, 6, total, "ESI 名称重试回填"):
         pass
 
+    status._c.empty()
     return True
 
 

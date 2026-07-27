@@ -2,7 +2,7 @@
 
 EVE Online 军团与联盟击杀记录查询与分析工具。
 
-基于 **zKillboard API** + **ESI API**，提供军团/联盟的击杀/损失数据拉取、本地缓存、多维度分析与可视化展示。
+基于 **zKillboard API** + **ESI API**，提供军团/联盟的击杀/损失数据拉取、本地缓存、多维度分析与可视化展示。支持**中英文双语**显示。
 
 
 ---
@@ -24,14 +24,21 @@ EVE Online 军团与联盟击杀记录查询与分析工具。
 | **KPI 指标卡** | 击杀数、击杀 ISK、损失数、损失 ISK、ISK 比率、活跃成员数 |
 | **📈 按时统计** | 24 小时击杀/损失分布柱状图（颜色编码 ISK 价值） |
 | **📅 按日统计** | 周报模式下 7 天每天击杀/损失分布 |
-| **🌍 星域热区** | 击杀发生最多的星域排行 |
-| **🗺️ 星系热区** | 击杀发生最多的星系排行 |
+| **🌍 星域热区** | 击杀发生最多的星域排行（中文显示） |
+| **🗺️ 星系热区** | 击杀发生最多的星系排行（含星域 tooltip） |
 | **⚔️ 击杀目标排行** | 被本方击杀的受害者联盟 Top 10 |
 | **🛡️ 被击杀源排行** | 击杀本方的攻击者联盟 Top 10 |
-| **🚢 击杀舰船排行** | 本方击杀时使用的舰船 Top 10 |
-| **💀 损失舰船排行** | 本方被击毁的舰船类型 Top 10 |
+| **🚢 击杀舰船排行** | 本方击杀时使用的舰船 Top 10（中文显示） |
+| **💀 损失舰船排行** | 本方被击毁的舰船类型 Top 10（中文显示） |
 | **🏆 击杀排行** | 军团/联盟成员击杀榜（含 ISK） |
 | **🎯 被杀排行** | 被本方击杀最多的角色排行 |
+
+### 🌐 中英文双语
+
+- 所有舰船名、星域名默认显示**中文**
+- Tooltip（悬浮窗）显示 **中文 (English)** 双语
+- Y 轴标签保持纯中文，简洁清晰
+- 翻译数据来自 CCP 官方 SDE + ESI 中文接口
 
 ### 🎯 支持的实体
 
@@ -48,10 +55,10 @@ EVE Online 军团与联盟击杀记录查询与分析工具。
 
 - **名称自动搜索** — 输入名称自动通过 zKillboard 联想搜索
 - **数字 ID 直连** — 直接输入数字 ID 跳过搜索步骤
-- **查询历史** — 最近 10 条查询一键回访（持久化到本地文件）
+- **查询历史** — 最近 10 条查询一键回访（同步到浏览器 localStorage）
 - **本地缓存** — 已拉取的数据自动缓存到 SQLite，避免重复请求
 - **去重存储** — 击杀数据 `INSERT OR IGNORE`，不重复入库
-- **ESI 名称解析** — 自动将 ID 解析为可读名称，本地缓存避免重复调用
+- **ESI 名称解析** — 自动将 ID 解析为可读名称，DB 缓存避免重复调用
 - **星域映射** — 自动将星系 ID 映射到所属星域名称
 
 ---
@@ -62,9 +69,10 @@ EVE Online 军团与联盟击杀记录查询与分析工具。
 |------|------|
 | **Web UI** | Streamlit |
 | **图表** | Plotly |
-| **数据库** | SQLite (WAL 模式) |
+| **数据库** | SQLite（WAL 模式，读写分离） |
 | **数据源** | zKillboard REST API |
 | **名称解析** | EVE ESI API |
+| **翻译数据** | CCP SDE (`fsd/types.yaml`) |
 | **语言** | Python 3.10+ |
 
 ---
@@ -101,7 +109,7 @@ streamlit run src/app.py
 
 ---
 
-## � 打包为独立 exe（无需 Python 环境）
+## 🗜️ 打包为独立 exe（无需 Python 环境）
 
 可以将此项目打包成一个 **独立的 exe 文件包**，发给没有 Python 的同事/朋友直接使用。
 
@@ -146,9 +154,8 @@ python build_exe.py
 
 ### 提示
 
-- ✅ **使用缓存** — 勾选时跳过 API 请求，直接使用本地已有数据（默认开启）
+- ✅ 本地数据有效时自动跳过 API 请求
 - ⚠️ zKillboard API 最多支持查询 **7 天以内** 的数据
-- 🔄 取消勾选「使用缓存」可强制重新拉取
 - 📜 点击 **最近查询** 按钮可快速切换历史实体
 
 ---
@@ -159,26 +166,30 @@ python build_exe.py
 EVE-killboard-analysis/
 ├── README.md
 ├── requirements.txt
-├── data/                           # 运行时数据
-│   ├── killboard.db                # SQLite 数据库（自动生成）
-│   ├── killboard.db                # SQLite 数据库（含 ID→名称、星系→星域缓存表）
-│   ├── query_history.json          # （旧方案，已迁移至浏览器 localStorage）
-│   ├── id_name_cache.json.bak      # ID→名称缓存（旧 JSON 备份，已迁移至 DB）
-│   └── system_region_cache.json.bak# 星系→星域映射缓存（旧 JSON 备份，已迁移至 DB）
+├── build_exe.bat / build_exe.py       # PyInstaller 打包脚本
+├── data/                              # 运行时数据 + 种子文件
+│   ├── killboard.db                   # SQLite 数据库（自动生成，gitignored）
+│   ├── type_translations_seed.json    # 中英文翻译种子文件（50287 条）
+│   ├── query_history.json             # （gitignored）
+│   └── *.bak                          # 旧 JSON 缓存备份
+├── images/                            # 截图
+├── scripts/
+│   ├── fetch_translations.py          # 从 SDE 导入类型翻译
+│   └── fetch_region_translations.py   # 从 ESI 导入星域翻译
 └── src/
     ├── __init__.py
-    ├── app.py                      # Streamlit 主入口 + UI
-    ├── config.py                   # 全局配置常量
+    ├── app.py                         # Streamlit 主入口 + UI
+    ├── config.py                      # 全局配置常量
     ├── analysis/
     │   ├── __init__.py
-    │   └── corp_analysis.py        # 分析引擎 (CorpDailyAnalysis)
+    │   └── corp_analysis.py           # 分析引擎 (CorpDailyAnalysis)
     ├── collector/
     │   ├── __init__.py
-    │   └── zkillboard.py           # zKillboard + ESI API 客户端
+    │   └── zkillboard.py              # zKillboard + ESI API 客户端
     └── storage/
         ├── __init__.py
-        ├── database.py             # SQLite 连接管理 & 建表
-        └── repository.py           # CRUD + 分析查询
+        ├── database.py                # SQLite 连接管理 & 建表（读写分离）
+        └── repository.py              # CRUD + 分析查询
 ```
 
 ---
@@ -201,10 +212,17 @@ zKillboard API (击杀拉取，自动翻页，最多回溯 7 天)
 ESI API (ID→名称解析 + 星系→星座→星域)
     │
     ▼
-本地缓存 (JSON 文件) ───▶ SQLite 数据库 (killboard.db)
+SQLite 数据库 (killboard.db)
+  ├── killmails / attackers / items    ← 原始英文数据
+  ├── system_region_cache             ← 星系→星域映射
+  ├── id_name_cache                   ← ID→名称缓存
+  └── type_translations               ← 中英文翻译（种子文件初始化 + ESI 增量补充）
     │
     ▼
 CorpDailyAnalysis (SQL 分析查询)
+    │
+    ▼
+展示层查 type_translations  →  中文显示 + 双语 tooltip
     │
     ▼
 Plotly 图表 + Streamlit 指标/表格 (UI 展示)
@@ -222,6 +240,23 @@ Plotly 图表 + Streamlit 指标/表格 (UI 展示)
 | `REQUEST_TIMEOUT` | 30 秒 | HTTP 请求超时 |
 | `USER_AGENT` | `EVE-Killboard-Analysis/1.0` | 自定义 UA |
 | `DB_PATH` | `data/killboard.db` | SQLite 数据库路径 |
+
+---
+
+## 🗄️ 数据库
+
+| 表 | 内容 |
+|----|------|
+| `killmails` | 击杀邮件（原始数据） |
+| `attackers` | 攻击者明细（原始数据） |
+| `items` | 掉落物品（原始数据） |
+| `fetch_log` | API 拉取记录（含缓存有效期） |
+| `id_name_cache` | ID→名称英文缓存 |
+| `system_region_cache` | 星系→星域映射 |
+| `type_translations` | **中英文翻译**（舰船/物品/星域等，50173 条） |
+
+> SQLite 使用 WAL 模式 + 读写分离（`get_db_read` / `get_db_write`），支持并发读写。
+> `type_translations` 由种子文件 `data/type_translations_seed.json` 初始化，首次启动自动加载。
 
 ---
 

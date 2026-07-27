@@ -87,9 +87,9 @@ def render_title(corp_name: str = None):
 
 # ── 侧边栏输入 ──────────────────────────────────────────
 
-# 默认联盟：Kuan.Dai.Shan (ID: 99009163)
-DEFAULT_ENTITY_ID = "Goonswarm Federation"
-DEFAULT_ENTITY_RESOLVE = (1354830081, "Goonswarm Federation", "alliance")
+# 默认输入：D.C (Dracarys.)
+DEFAULT_ENTITY_ID = "D.C"
+DEFAULT_ENTITY_RESOLVE = (99009163, "Dracarys. <D.C>", "alliance")
 
 with st.sidebar:
     st.header("⚙️ 设置")
@@ -337,6 +337,38 @@ if st.session_state.pop("_search_selected", False):
 
 # ── 数据加载 ────────────────────────────────────────────
 
+class _ProgressDisplay:
+    """替代 st.status()，用 st.empty() + markdown 确保每次加载完全刷新，不残留旧步骤。"""
+    def __init__(self, container, label=""):
+        self._c = container
+        self._lines: list[str] = []
+        self._label = label
+        self._state = "running"
+
+    def write(self, text: str):
+        self._lines.append(text)
+        self._render()
+
+    def update(self, *, label=None, state=None):
+        if label is not None:
+            self._label = label
+        if state is not None:
+            self._state = state
+        self._render()
+
+    def _render(self):
+        icon = {"running": "🔄", "complete": "✅", "error": "❌"}.get(self._state, "🔄")
+        header = f"{icon} {self._label}"
+        body = "<br>".join(self._lines)
+        if self._state == "running":
+            content = f"{header}<br>{body}" if body else header
+            self._c.markdown(content, unsafe_allow_html=True)
+        else:
+            # 完成后折叠，点击可展开查看详细步骤
+            content = f"<details><summary>{header}</summary><br>{body}</details>" if body else header
+            self._c.markdown(content, unsafe_allow_html=True)
+
+
 def _step_timer(status, step_num: int, total: int, label: str):
     """上下文管理器，自动计时步骤并更新 status。"""
     import contextlib
@@ -360,7 +392,7 @@ def load_data(date_from, date_to, status):
     with _step_timer(status, 1, total, "检查本地缓存"):
         if is_cache_valid(entity_id, etype, date_from, date_to):
             status.write("📦 本地数据有效，跳过 API 请求")
-            status.update(label="✅ 数据加载完成（缓存有效）", state="complete")
+            status.update(label="数据加载完成（缓存有效）", state="complete")
             return True
 
     # 计算回溯秒数：向上取整到天的整倍数（避免 zKillboard 某些秒数返回空的 bug）
@@ -386,11 +418,11 @@ def load_data(date_from, date_to, status):
             )
         except RuntimeError as e:
             status.write(f"❌ 数据拉取失败: {e}")
-            status.update(label="❌ 数据拉取失败", state="error")
+            status.update(label="数据拉取失败", state="error")
             return False
         except Exception as e:
             status.write(f"❌ 数据拉取失败: {e}")
-            status.update(label="❌ 数据拉取失败", state="error")
+            status.update(label="数据拉取失败", state="error")
             return False
 
     if not results:
@@ -401,7 +433,7 @@ def load_data(date_from, date_to, status):
             upsert_fetch_log(entity_id, etype, _day.isoformat(), _next.isoformat(), 0, True)
             _day = _next
         status.write("   ↳ 无数据")
-        status.update(label="⚠️ 该时段无击杀记录", state="complete")
+        status.update(label="该时段无击杀记录", state="complete")
         return True
 
     # 步骤 3-4: ESI 解析（在 fetch 内部已完成，仅打时间戳）
@@ -451,10 +483,12 @@ _report_label = "周报" if report_type == "weekly" else "日报"
 # 有实体时始终进入分析/展示流程
 if entity_id is not None:
     if not st.session_state.data_loaded and entity_id is not None:
-        status = st.status("🚀 正在拉取并分析数据 ...", expanded=True, state="running")
+        # 用空容器 + 自定义进度面板，保证每次加载完全刷新
+        _status_box = st.empty()
+        status = _ProgressDisplay(_status_box, "正在拉取并分析数据 ...")
         ok = load_data(_date_from, _date_to, status)
         if not ok:
-            status.update(label="❌ 数据加载失败", state="error")
+            status.update(label="数据加载失败", state="error")
             st.stop()
 
         # ── 执行分析（步骤 7） ──────────────────────────
@@ -464,7 +498,7 @@ if entity_id is not None:
                 target_date=selected_date, report_type=report_type
             )
 
-        status.update(label="✅ 数据分析完成 ✓", state="complete")
+        status.update(label="数据分析完成 ✓", state="complete")
         st.session_state.data_loaded = True
     else:
         # 后续 rerun：直接从数据库读取分析结果

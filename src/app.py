@@ -321,18 +321,56 @@ with st.sidebar:
 # ── 中文名称辅助 ────────────────────────────────────────
 
 def _apply_zh_ship_names(df, type_col: str, name_col: str):
-    """将 DataFrame 中的舰船英文名替换为中文名（查 type_translations）。"""
+    """舰船名加中英双语列。原列变纯中文（y轴用），新增 _bil 列（tooltip用）。"""
     from src.storage.database import batch_get_names_zh
     ids = df[type_col].dropna().unique().tolist()
     if not ids:
         return df
+    bil_col = f"{name_col}_bil"
     zh_map = batch_get_names_zh([int(x) for x in ids])
     if zh_map:
+        df[bil_col] = df.apply(
+            lambda r: f"{zh_map.get(int(r[type_col]), r[name_col])} ({r[name_col]})"
+            if int(r[type_col]) in zh_map else r[name_col],
+            axis=1,
+        )
         df[name_col] = df.apply(
             lambda r: zh_map.get(int(r[type_col]), r[name_col])
             if pd.notna(r[type_col]) else r[name_col],
             axis=1,
         )
+    else:
+        df[bil_col] = df[name_col]
+    return df
+
+
+def _apply_zh_region_names(df, name_col: str):
+    """添加星域中英双语列，原列改为纯中文（y轴用），新增 _bil 列（tooltip用）。"""
+    from src.storage.database import get_db_read
+    en_names = df[name_col].dropna().unique().tolist()
+    if not en_names:
+        return df
+    bil_col = f"{name_col}_bil"
+    try:
+        ph = ",".join("?" * len(en_names))
+        with get_db_read() as conn:
+            rows = conn.execute(
+                f"SELECT name_en, name_zh FROM type_translations WHERE name_en IN ({ph})",
+                en_names,
+            ).fetchall()
+        zh_map = {r["name_en"]: r["name_zh"] for r in rows}
+        if zh_map:
+            df[bil_col] = df[name_col].map(
+                lambda x: f"{zh_map[x]} ({x})" if x in zh_map else x
+            )
+            df[name_col] = df[name_col].map(
+                lambda x: zh_map.get(x, x)
+            )
+        else:
+            df[bil_col] = df[name_col]
+    except Exception:
+        df[bil_col] = df[name_col]
+        pass
     return df
 
 
@@ -752,6 +790,7 @@ if entity_id is not None:
         st.subheader("🌍 星域")
         if "region_hotspots" in dfs:
             df = dfs["region_hotspots"].copy()
+            df = _apply_zh_region_names(df, "solar_system_region_name")
             df["isk_label"] = df["total_isk"].apply(_fmt)
             fig = px.bar(
                 df.head(10).iloc[::-1],
@@ -762,10 +801,20 @@ if entity_id is not None:
                 color="total_isk",
                 color_continuous_scale="Reds",
                 text="kills",
-                hover_data={"total_isk": False, "isk_label": True},
+                hover_data={"solar_system_region_name_bil": False,
+                            "total_isk": False, "isk_label": False},
+            )
+            _chart_df = df.head(10).iloc[::-1]
+            fig.update_traces(
+                hovertemplate=(
+                    "<b>%{customdata[1]}</b><br>"
+                    "击杀: %{x}<br>"
+                    "ISK: %{customdata[0]}<extra></extra>"
+                ),
+                customdata=_chart_df[["isk_label", "solar_system_region_name_bil"]].values,
+                textposition="outside",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            fig.update_traces(textposition="outside")
             st.plotly_chart(fig, width="stretch")
         else:
             st.info("暂无星域数据")
@@ -775,12 +824,30 @@ if entity_id is not None:
         if "system_hotspots" in dfs:
             df = dfs["system_hotspots"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
+            # 补充所在星域名
+            try:
+                from src.storage.database import get_db_read
+                sys_ids = df["solar_system_id"].dropna().unique().tolist()
+                if sys_ids:
+                    ph = ",".join("?" * len(sys_ids))
+                    with get_db_read() as conn:
+                        rows = conn.execute(
+                            f"SELECT system_id, region_name FROM system_region_cache WHERE system_id IN ({ph})",
+                            sys_ids,
+                        ).fetchall()
+                    region_map = {r["system_id"]: r["region_name"] for r in rows}
+                    df["region_name"] = df["solar_system_id"].map(
+                        lambda x: region_map.get(x, "") if pd.notna(x) else ""
+                    )
+            except Exception:
+                df["region_name"] = ""
             df["display"] = df.apply(
                 lambda r: f"{r['solar_system_name']} ({r['kills']})",
                 axis=1,
             )
+            _chart_df = df.head(10).iloc[::-1]
             fig = px.bar(
-                df.head(10).iloc[::-1],
+                _chart_df,
                 x="kills",
                 y="display",
                 orientation="h",
@@ -788,10 +855,19 @@ if entity_id is not None:
                 color="total_isk",
                 color_continuous_scale="Reds",
                 text="kills",
-                hover_data={"total_isk": False, "isk_label": True},
+                hover_data={"total_isk": False, "isk_label": False, "region_name": False},
+            )
+            fig.update_traces(
+                hovertemplate=(
+                    "<b>%{y}</b><br>"
+                    "击杀: %{x}<br>"
+                    "ISK: %{customdata[0]}<br>"
+                    "星域: %{customdata[1]}<extra></extra>"
+                ),
+                customdata=_chart_df[["isk_label", "region_name"]].values,
+                textposition="outside",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            fig.update_traces(textposition="outside")
             st.plotly_chart(fig, width="stretch")
         else:
             st.info("暂无星系数据")
@@ -930,8 +1006,9 @@ if entity_id is not None:
             df["display"] = df.apply(
                 lambda r: f"{r['ship_name']} ({r['count']})", axis=1
             )
+            _chart_df = df.head(10).iloc[::-1]
             fig = px.bar(
-                df.head(10).iloc[::-1],
+                _chart_df,
                 x="count",
                 y="display",
                 orientation="h",
@@ -939,10 +1016,18 @@ if entity_id is not None:
                 color="total_isk",
                 color_continuous_scale="Reds",
                 text="count",
-                hover_data={"total_isk": False, "isk_label": True},
+                hover_data={"total_isk": False, "isk_label": False},
+            )
+            fig.update_traces(
+                hovertemplate=(
+                    "<b>%{customdata[1]}</b><br>"
+                    "击杀: %{x}<br>"
+                    "ISK: %{customdata[0]}<extra></extra>"
+                ),
+                customdata=_chart_df[["isk_label", "ship_name_bil"]].values,
+                textposition="outside",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            fig.update_traces(textposition="outside")
             st.plotly_chart(fig, width="stretch")
         else:
             st.info("暂无数据")
@@ -956,8 +1041,9 @@ if entity_id is not None:
             df["display"] = df.apply(
                 lambda r: f"{r['victim_ship_name']} ({r['count']})", axis=1
             )
+            _chart_df = df.head(10).iloc[::-1]
             fig = px.bar(
-                df.head(10).iloc[::-1],
+                _chart_df,
                 x="count",
                 y="display",
                 orientation="h",
@@ -965,10 +1051,18 @@ if entity_id is not None:
                 color="total_isk",
                 color_continuous_scale="Reds",
                 text="count",
-                hover_data={"total_isk": False, "isk_label": True},
+                hover_data={"total_isk": False, "isk_label": False},
+            )
+            fig.update_traces(
+                hovertemplate=(
+                    "<b>%{customdata[1]}</b><br>"
+                    "损失: %{x}<br>"
+                    "ISK: %{customdata[0]}<extra></extra>"
+                ),
+                customdata=_chart_df[["isk_label", "victim_ship_name_bil"]].values,
+                textposition="outside",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            fig.update_traces(textposition="outside")
             st.plotly_chart(fig, width="stretch")
         else:
             st.info("暂无数据")

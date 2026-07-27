@@ -433,8 +433,8 @@ def _render_chart_with_copy(fig, bil_labels, session_key, btn_label="◀"):
             _labels = [s.replace("(", " ").replace(")", "") for s in bil_labels][::-1]
             _text = "\n".join(_labels)
             st.markdown(
-                f"<div style='font-size:13px;line-height:2;user-select:text;"
-                f"-webkit-user-select:text;padding:10px;background:#f7f7f7;"
+                f"<div style='font-size:12px;line-height:1.9;user-select:text;"
+                f"-webkit-user-select:text;padding:8px;background:#f7f7f7;"
                 f"border-radius:6px;white-space:pre'>{_text}</div>",
                 unsafe_allow_html=True,
             )
@@ -870,32 +870,7 @@ if entity_id is not None:
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
 
-            # ── 箭头按钮 + 可复制文字列（用 fragment 隔离，点击不触发全局刷新） ──
-            @st.fragment
-            def _render_region_chart(fig, _chart_df):
-                _show = st.session_state.setdefault("_show_region_text", False)
-                if _show:
-                    _rcol_btn, _rcol_text, _rcol_chart = st.columns([0.5, 2, 7.5])
-                else:
-                    _rcol_btn, _rcol_chart = st.columns([0.5, 9.5])
-                with _rcol_btn:
-                    if st.button("◀", key="region_copy_btn", help="点击展开/收起星域列表（可选中复制）"):
-                        st.session_state._show_region_text = not _show
-                        st.rerun(scope="fragment")
-                if _show:
-                    with _rcol_text:
-                        _labels = _chart_df["solar_system_region_name_bil"].str.replace("(", " ").str.replace(")", "").tolist()[::-1]
-                        _text = "\n".join(_labels)
-                        st.markdown(
-                            f"<div style='font-size:13px;line-height:2;user-select:text;"
-                            f"-webkit-user-select:text;padding:10px;background:#f7f7f7;"
-                            f"border-radius:6px;white-space:pre'>{_text}</div>",
-                            unsafe_allow_html=True,
-                        )
-                with _rcol_chart:
-                    st.plotly_chart(fig, width="stretch")
-
-            _render_region_chart(fig, _chart_df)
+            _render_chart_with_copy(fig, _chart_df["solar_system_region_name_bil"].tolist(), "_show_region_text", "◀")
         else:
             st.info("暂无星域数据")
 

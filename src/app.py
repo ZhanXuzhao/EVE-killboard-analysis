@@ -422,7 +422,14 @@ def _render_chart_with_copy(fig, bil_labels, session_key, _arrow="◀"):
     _show = st.session_state.setdefault(session_key, False)
     _arrow = "▶" if _show else "◀"
     if _show:
-        _rcol_btn, _rcol_text, _rcol_chart = st.columns([0.5, 2, 7.5])
+        # 根据最长行内容动态计算文字列宽度（中文算2个英文字符）
+        def _vw(s):
+            return sum(2 if '\u4e00' <= c <= '\u9fff' or '\u3400' <= c <= '\u4dbf' or '\uf900' <= c <= '\ufaff' else 1 for c in s)
+        _procd = [s.replace("(", " ").replace(")", "") for s in bil_labels]
+        _max_len = max(_vw(l) for l in _procd)
+        padding = 0.4
+        _text_ratio = max(0.5, min(5.0, _max_len * 0.08)) + padding
+        _rcol_btn, _rcol_text, _rcol_chart = st.columns([0.5, _text_ratio, 10 - 0.5 - _text_ratio])
     else:
         _rcol_btn, _rcol_chart = st.columns([0.5, 9.5])
     with _rcol_btn:

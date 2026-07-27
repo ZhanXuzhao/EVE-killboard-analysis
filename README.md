@@ -161,7 +161,7 @@ EVE-killboard-analysis/
 ├── data/                           # 运行时数据
 │   ├── killboard.db                # SQLite 数据库（自动生成）
 │   ├── killboard.db                # SQLite 数据库（含 ID→名称、星系→星域缓存表）
-│   ├── query_history.json          # 查询历史持久化
+│   ├── query_history.json          # （旧方案，已迁移至浏览器 localStorage）
 │   ├── id_name_cache.json.bak      # ID→名称缓存（旧 JSON 备份，已迁移至 DB）
 │   └── system_region_cache.json.bak# 星系→星域映射缓存（旧 JSON 备份，已迁移至 DB）
 └── src/

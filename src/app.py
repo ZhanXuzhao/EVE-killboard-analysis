@@ -86,7 +86,7 @@ def render_title(corp_name: str = None):
 
 # 默认输入：D.C (Dracarys.)
 DEFAULT_ENTITY_ID = "D.C"
-DEFAULT_ENTITY_RESOLVE = (99009163, "Dracarys. <D.C>", "alliance")
+DEFAULT_ENTITY_RESOLVE = (99009163, "Dracarys.", "alliance")
 
 with st.sidebar:
     st.header("⚙️ 设置")
@@ -196,7 +196,6 @@ with st.sidebar:
                     st.session_state.entity_name = str(corp_id_int)
                 st.session_state.entity_id = corp_id_int
                 st.session_state.entity_type = detected_type
-                st.session_state._input_value = str(corp_id_int)
             else:
                 # 文字 → 搜索军团和联盟
                 with st.spinner(f"正在搜索「{corp_input.strip()}」..."):
@@ -225,7 +224,6 @@ with st.sidebar:
                         st.session_state.entity_name = non_sep[0][0].split(" (ID:")[0]
                         st.session_state.entity_type = non_sep[0][2]
                         st.session_state._search_options = None
-                        st.session_state._input_value = non_sep[0][0].split(" (ID:")[0]
                         label = "联盟" if st.session_state.entity_type == "alliance" else "军团"
                         st.success(f"✅ 已匹配 {label}: **{st.session_state.entity_name}**")
                 else:
@@ -403,7 +401,7 @@ if st.session_state.pop("_history_trigger", False):
     analyze_btn = True
 
 if entity_id is None:
-    st.info("👈 请在左侧输入军团名称或 ID")
+    st.info("👈 请在左侧输入或选择军团/联盟名称")
     st.stop()
 
 # 从搜索结果中选中了实体 → 自动触发分析
@@ -1104,4 +1102,4 @@ if entity_id is not None:
 
 else:
     render_title()
-    st.info("👈 请在左侧输入军团名称或 ID")
+    st.info("👈 请在左侧输入或选择军团/联盟名称")

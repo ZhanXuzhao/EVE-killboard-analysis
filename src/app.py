@@ -417,15 +417,16 @@ def _apply_zh_region_names(df, name_col: str):
 # ── 图表箭头 + 可复制文字列 fragment（通用） ───────────────
 
 @st.fragment
-def _render_chart_with_copy(fig, bil_labels, session_key, btn_label="◀"):
+def _render_chart_with_copy(fig, bil_labels, session_key, _arrow="◀"):
     """通用 fragment：图表左侧加箭头按钮，点击展开/收起双语文字列。"""
     _show = st.session_state.setdefault(session_key, False)
+    _arrow = "▶" if _show else "◀"
     if _show:
         _rcol_btn, _rcol_text, _rcol_chart = st.columns([0.5, 2, 7.5])
     else:
         _rcol_btn, _rcol_chart = st.columns([0.5, 9.5])
     with _rcol_btn:
-        if st.button(btn_label, key=f"{session_key}_btn", help="点击展开/收起列表（可选中复制）"):
+        if st.button(_arrow, key=f"{session_key}_btn", help="点击展开/收起列表（可选中复制）"):
             st.session_state[session_key] = not _show
             st.rerun(scope="fragment")
     if _show:

@@ -154,7 +154,7 @@ with st.sidebar:
 
     with st.form(key="search_form"):
         corp_input = st.text_input(
-            "军团名称 / ID",
+            "军团/联盟名称或代码",
             value=st.session_state.get("_input_value", DEFAULT_ENTITY_ID),
             placeholder="例如: Goonswarm Federation 或 987654321",
             help="输入军团名称（自动搜索）或直接输入数字 ID",
@@ -225,7 +225,7 @@ with st.sidebar:
                         st.session_state.entity_name = non_sep[0][0].split(" (ID:")[0]
                         st.session_state.entity_type = non_sep[0][2]
                         st.session_state._search_options = None
-                        st.session_state._input_value = str(non_sep[0][1])
+                        st.session_state._input_value = non_sep[0][0].split(" (ID:")[0]
                         label = "联盟" if st.session_state.entity_type == "alliance" else "军团"
                         st.success(f"✅ 已匹配 {label}: **{st.session_state.entity_name}**")
                 else:
@@ -248,7 +248,7 @@ with st.sidebar:
                 st.session_state.entity_type = etype
                 st.session_state.data_loaded = False
                 st.session_state._search_selected = True
-                st.session_state._input_value = str(eid)
+                st.session_state._input_value = label_t.split(" (ID:")[0]
                 break
 
     # ── 查询历史（仅渲染按钮，不自动移动） ─────

@@ -499,6 +499,7 @@ if entity_id is not None:
         # 用空容器 + 自定义进度面板，保证每次加载完全刷新
         _status_box = st.empty()
         status = _ProgressDisplay(_status_box, "正在拉取并分析数据 ...")
+        _total_start = time.time()
         ok = load_data(_date_from, _date_to, status)
         if not ok:
             status.update(label="数据加载失败", state="error")
@@ -511,6 +512,8 @@ if entity_id is not None:
                 target_date=selected_date, report_type=report_type
             )
 
+        _total_elapsed = time.time() - _total_start
+        status.write(f"📊 所有步骤总耗时: {_total_elapsed:.1f}s")
         status.update(label="数据分析完成 ✓", state="complete")
         st.session_state.data_loaded = True
     else:

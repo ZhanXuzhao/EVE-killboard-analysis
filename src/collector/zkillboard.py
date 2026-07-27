@@ -500,8 +500,5 @@ def fetch_entity_kills(
         }
         results.append(result)
 
-    if on_progress:
-        on_progress(1, 1)
-
     logger.info(f"拉取完成: 获取 {len(results)} 条击杀数据, complete={complete}")
     return results, complete

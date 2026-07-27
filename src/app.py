@@ -87,9 +87,9 @@ def render_title(corp_name: str = None):
 
 # ── 侧边栏输入 ──────────────────────────────────────────
 
-# 默认联盟：Kuan.Dai.Shan (ID: 99009163)
-DEFAULT_ENTITY_ID = "Goonswarm Federation"
-DEFAULT_ENTITY_RESOLVE = (1354830081, "Goonswarm Federation", "alliance")
+# 默认输入：D.C (Dracarys.)
+DEFAULT_ENTITY_ID = "D.C"
+DEFAULT_ENTITY_RESOLVE = (99009163, "Dracarys. <D.C>", "alliance")
 
 with st.sidebar:
     st.header("⚙️ 设置")
@@ -337,6 +337,38 @@ if st.session_state.pop("_search_selected", False):
 
 # ── 数据加载 ────────────────────────────────────────────
 
+class _ProgressDisplay:
+    """替代 st.status()，用 st.empty() + markdown 确保每次加载完全刷新，不残留旧步骤。"""
+    def __init__(self, container, label=""):
+        self._c = container
+        self._lines: list[str] = []
+        self._label = label
+        self._state = "running"
+
+    def write(self, text: str):
+        self._lines.append(text)
+        self._render()
+
+    def update(self, *, label=None, state=None):
+        if label is not None:
+            self._label = label
+        if state is not None:
+            self._state = state
+        self._render()
+
+    def _render(self):
+        icon = {"running": "🔄", "complete": "✅", "error": "❌"}.get(self._state, "🔄")
+        header = f"{icon} {self._label}"
+        body = "<br>".join(self._lines)
+        if self._state == "running":
+            content = f"{header}<br>{body}" if body else header
+            self._c.markdown(content, unsafe_allow_html=True)
+        else:
+            # 完成后折叠，点击可展开查看详细步骤
+            content = f"<details><summary>{header}</summary><br>{body}</details>" if body else header
+            self._c.markdown(content, unsafe_allow_html=True)
+
+
 def _step_timer(status, step_num: int, total: int, label: str):
     """上下文管理器，自动计时步骤并更新 status。"""
     import contextlib
@@ -360,18 +392,29 @@ def load_data(date_from, date_to, status):
     with _step_timer(status, 1, total, "检查本地缓存"):
         if is_cache_valid(entity_id, etype, date_from, date_to):
             status.write("📦 本地数据有效，跳过 API 请求")
-            status.update(label="✅ 数据加载完成（缓存有效）", state="complete")
+            status.update(label="数据加载完成（缓存有效）", state="complete")
+            status._c.empty()
             return True
 
-    # 计算回溯秒数：向上取整到天的整倍数（避免 zKillboard 某些秒数返回空的 bug）
+    # 计算回溯秒数：zKillboard API 最大支持 604800 秒（7天）
+    # 注意：pastSeconds 是相对"当前时间"的回溯，不是指定日期范围
+    ZKILL_MAX_PAST = 604800
     start_dt = datetime.fromisoformat(date_from)
     if start_dt.tzinfo is None:
         start_dt = start_dt.replace(tzinfo=timezone.utc)
     now = datetime.now(timezone.utc)
-    _past_sec = int((now - start_dt).total_seconds()) + 86400
-    _past_sec = ((_past_sec + 86399) // 86400) * 86400  # 向上取整到天的整倍数
-    if _past_sec > 604800:
-        _past_sec = 604800
+
+    # 计算从 date_from 到 now 的秒数，加上小缓冲（1小时）避免边界问题
+    _past_sec = int((now - start_dt).total_seconds()) + 3600
+    # 向上取整到天的整倍数（避免 zKillboard 某些秒数返回空的 bug）
+    _past_sec = ((_past_sec + 86399) // 86400) * 86400
+    if _past_sec > ZKILL_MAX_PAST:
+        _past_sec = ZKILL_MAX_PAST
+
+    # 如果需要的数据早于 API 最大回溯范围，给出提示
+    days_needed = (now - start_dt).days
+    if days_needed > 7:
+        status.write(f"⚠️ 所选周期起始于 {days_needed} 天前，超出 zKillboard API 最大回溯范围（7天），早期数据可能无法获取")
 
     # 步骤 2: 拉取击杀列表
     with _step_timer(status, 2, total, "从 zKillboard 拉取击杀列表"):
@@ -386,11 +429,11 @@ def load_data(date_from, date_to, status):
             )
         except RuntimeError as e:
             status.write(f"❌ 数据拉取失败: {e}")
-            status.update(label="❌ 数据拉取失败", state="error")
+            status.update(label="数据拉取失败", state="error")
             return False
         except Exception as e:
             status.write(f"❌ 数据拉取失败: {e}")
-            status.update(label="❌ 数据拉取失败", state="error")
+            status.update(label="数据拉取失败", state="error")
             return False
 
     if not results:
@@ -400,15 +443,23 @@ def load_data(date_from, date_to, status):
             _next = _day + timedelta(days=1)
             upsert_fetch_log(entity_id, etype, _day.isoformat(), _next.isoformat(), 0, True)
             _day = _next
+        upsert_fetch_log(entity_id, etype, date_from, date_to, 0, True)
         status.write("   ↳ 无数据")
-        status.update(label="⚠️ 该时段无击杀记录", state="complete")
+        status.update(label="该时段无击杀记录", state="complete")
+        status._c.empty()
         return True
 
-    # 步骤 3-4: ESI 解析（在 fetch 内部已完成，仅打时间戳）
+    # 步骤 3: ESI 名称解析（角色/军团/联盟/舰船）
     with _step_timer(status, 3, total, "ESI 名称解析（角色/军团/联盟/舰船）"):
-        pass
+        from src.collector.zkillboard import _enrich_killmail_names
+        raw_kills = [r["killmail"] for r in results]
+        _enrich_killmail_names(raw_kills)
+
+    # 步骤 4: ESI 星域解析（星系→星域）
     with _step_timer(status, 4, total, "ESI 星域解析（星系→星域）"):
-        pass
+        from src.collector.zkillboard import _enrich_system_regions
+        raw_kills = [r["killmail"] for r in results]
+        _enrich_system_regions(raw_kills)
 
     # 步骤 5: 存入 SQLite
     with _step_timer(status, 5, total, f"存入 SQLite 数据库（{len(results)} 条）"):
@@ -432,12 +483,15 @@ def load_data(date_from, date_to, status):
         _day_to = _next.isoformat()
         upsert_fetch_log(entity_id, etype, _day_from, _day_to, 0 if not results else saved + skipped, complete)
         _day = _next
+    # 同时存一份精确范围，供 is_cache_valid 精确匹配
+    upsert_fetch_log(entity_id, etype, date_from, date_to, saved + skipped, complete)
     status.write(f"   ↳ 拉取{'完整' if complete else '不完整（可能还有下一页）'}")
 
     # 步骤 6: 名称重试（在分析阶段执行）
     with _step_timer(status, 6, total, "ESI 名称重试回填"):
         pass
 
+    status._c.empty()
     return True
 
 
@@ -451,10 +505,13 @@ _report_label = "周报" if report_type == "weekly" else "日报"
 # 有实体时始终进入分析/展示流程
 if entity_id is not None:
     if not st.session_state.data_loaded and entity_id is not None:
-        status = st.status("🚀 正在拉取并分析数据 ...", expanded=True, state="running")
+        # 用空容器 + 自定义进度面板，保证每次加载完全刷新
+        _status_box = st.empty()
+        status = _ProgressDisplay(_status_box, "正在拉取并分析数据 ...")
+        _total_start = time.time()
         ok = load_data(_date_from, _date_to, status)
         if not ok:
-            status.update(label="❌ 数据加载失败", state="error")
+            status.update(label="数据加载失败", state="error")
             st.stop()
 
         # ── 执行分析（步骤 7） ──────────────────────────
@@ -464,7 +521,9 @@ if entity_id is not None:
                 target_date=selected_date, report_type=report_type
             )
 
-        status.update(label="✅ 数据分析完成 ✓", state="complete")
+        _total_elapsed = time.time() - _total_start
+        status.write(f"📊 所有步骤总耗时: {_total_elapsed:.1f}s")
+        status.update(label="数据分析完成 ✓", state="complete")
         st.session_state.data_loaded = True
     else:
         # 后续 rerun：直接从数据库读取分析结果
@@ -653,7 +712,7 @@ if entity_id is not None:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("🌍 星域 Top")
+        st.subheader("🌍 星域")
         if "region_hotspots" in dfs:
             df = dfs["region_hotspots"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -675,7 +734,7 @@ if entity_id is not None:
             st.info("暂无星域数据")
 
     with col2:
-        st.subheader("🗺️ 星系 Top")
+        st.subheader("🗺️ 星系")
         if "system_hotspots" in dfs:
             df = dfs["system_hotspots"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -705,7 +764,7 @@ if entity_id is not None:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("⚔️ 杀了谁 Top")
+        st.subheader("⚔️ 杀了谁")
         if "top_killed_alliances" in dfs:
             df = dfs["top_killed_alliances"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -730,7 +789,7 @@ if entity_id is not None:
             st.info("暂无数据")
 
     with col2:
-        st.subheader("🛡️ 被谁杀 Top")
+        st.subheader("🛡️ 被谁杀")
         if "top_attacker_alliances" in dfs:
             df = dfs["top_attacker_alliances"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -759,7 +818,7 @@ if entity_id is not None:
     col_j1, col_j2 = st.columns(2)
 
     with col_j1:
-        st.subheader("🤝 联合击杀（合作联盟 Top）")
+        st.subheader("🤝 合作击杀（合作联盟）")
         if "joint_kills_alliances" in dfs:
             df = dfs["joint_kills_alliances"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -788,7 +847,7 @@ if entity_id is not None:
             st.info("暂无联合击杀数据")
 
     with col_j2:
-        st.subheader("👥 联合人数（各联盟参战人数 Top）")
+        st.subheader("👥 合作人数（合作联盟参战人数）")
         if "joint_kills_alliances" in dfs:
             df = dfs["joint_kills_alliances"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -802,7 +861,7 @@ if entity_id is not None:
                 x="participant_count",
                 y="display",
                 orientation="h",
-                labels={"participant_count": "参战人数", "display": "联盟"},
+                labels={"participant_count": "合作联盟参战人数", "display": "联盟"},
                 color="joint_kills",
                 color_continuous_scale="Blues",
                 text="participant_count",
@@ -826,7 +885,7 @@ if entity_id is not None:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("🚢 击杀舰船 Top")
+        st.subheader("🚢 击杀舰船")
         if "top_kill_ships" in dfs:
             df = dfs["top_kill_ships"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -851,7 +910,7 @@ if entity_id is not None:
             st.info("暂无数据")
 
     with col2:
-        st.subheader("💀 损失舰船 Top")
+        st.subheader("💀 损失舰船")
         if "top_loss_ships" in dfs:
             df = dfs["top_loss_ships"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)

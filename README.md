@@ -11,7 +11,8 @@ EVE Online 军团与联盟击杀记录查询与分析工具。
 
 [点这里开始体验](https://eve-killboard-analysis-kh7x2vrzkn9wky2ajcrkxn.streamlit.app/)
 
-![应用截图](images/屏幕截图%202026-07-26%20165811.png)
+![应用截图1](images/屏幕截图%202026-07-27%20125652.png)
+![应用截图2](images/屏幕截图%202026-07-27%20125945.png)
 ---
 
 ## ✨ 功能特性

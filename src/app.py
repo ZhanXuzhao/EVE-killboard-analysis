@@ -712,7 +712,7 @@ if entity_id is not None:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("🌍 星域 Top")
+        st.subheader("🌍 星域")
         if "region_hotspots" in dfs:
             df = dfs["region_hotspots"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -734,7 +734,7 @@ if entity_id is not None:
             st.info("暂无星域数据")
 
     with col2:
-        st.subheader("🗺️ 星系 Top")
+        st.subheader("🗺️ 星系")
         if "system_hotspots" in dfs:
             df = dfs["system_hotspots"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -764,7 +764,7 @@ if entity_id is not None:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("⚔️ 杀了谁 Top")
+        st.subheader("⚔️ 杀了谁")
         if "top_killed_alliances" in dfs:
             df = dfs["top_killed_alliances"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -789,7 +789,7 @@ if entity_id is not None:
             st.info("暂无数据")
 
     with col2:
-        st.subheader("🛡️ 被谁杀 Top")
+        st.subheader("🛡️ 被谁杀")
         if "top_attacker_alliances" in dfs:
             df = dfs["top_attacker_alliances"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -818,7 +818,7 @@ if entity_id is not None:
     col_j1, col_j2 = st.columns(2)
 
     with col_j1:
-        st.subheader("🤝 联合击杀（合作联盟 Top）")
+        st.subheader("🤝 合作击杀（合作联盟）")
         if "joint_kills_alliances" in dfs:
             df = dfs["joint_kills_alliances"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -847,7 +847,7 @@ if entity_id is not None:
             st.info("暂无联合击杀数据")
 
     with col_j2:
-        st.subheader("👥 联合人数（各联盟参战人数 Top）")
+        st.subheader("👥 合作人数（合作联盟参战人数）")
         if "joint_kills_alliances" in dfs:
             df = dfs["joint_kills_alliances"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -861,7 +861,7 @@ if entity_id is not None:
                 x="participant_count",
                 y="display",
                 orientation="h",
-                labels={"participant_count": "参战人数", "display": "联盟"},
+                labels={"participant_count": "合作联盟参战人数", "display": "联盟"},
                 color="joint_kills",
                 color_continuous_scale="Blues",
                 text="participant_count",
@@ -885,7 +885,7 @@ if entity_id is not None:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("🚢 击杀舰船 Top")
+        st.subheader("🚢 击杀舰船")
         if "top_kill_ships" in dfs:
             df = dfs["top_kill_ships"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
@@ -910,7 +910,7 @@ if entity_id is not None:
             st.info("暂无数据")
 
     with col2:
-        st.subheader("💀 损失舰船 Top")
+        st.subheader("💀 损失舰船")
         if "top_loss_ships" in dfs:
             df = dfs["top_loss_ships"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)

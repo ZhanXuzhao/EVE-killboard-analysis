@@ -433,12 +433,7 @@ def _render_chart_with_copy(fig, bil_labels, session_key, _arrow="◀"):
         with _rcol_text:
             _labels = [s.replace("(", " ").replace(")", "") for s in bil_labels][::-1]
             _text = "\n".join(_labels)
-            st.markdown(
-                f"<div style='font-size:12px;line-height:1.9;user-select:text;"
-                f"-webkit-user-select:text;padding:8px;background:#f7f7f7;"
-                f"border-radius:6px;white-space:pre'>{_text}</div>",
-                unsafe_allow_html=True,
-            )
+            st.code(_text, language=None)
     with _rcol_chart:
         st.plotly_chart(fig, width="stretch")
 
@@ -469,7 +464,7 @@ if entity_id is None:
 # ── 数据加载 ────────────────────────────────────────────
 
 class _ProgressDisplay:
-    """替代 st.status()，用 st.empty() + markdown 确保每次加载完全刷新，不残留旧步骤。"""
+    """替代 st.status()，用 st.empty() + st.text() / st.expander() 确保每次加载完全刷新，不残留旧步骤。"""
     def __init__(self, container, label=""):
         self._c = container
         self._lines: list[str] = []
@@ -490,14 +485,17 @@ class _ProgressDisplay:
     def _render(self):
         icon = {"running": "🔄", "complete": "✅", "error": "❌"}.get(self._state, "🔄")
         header = f"{icon} {self._label}"
-        body = "<br>".join(self._lines)
         if self._state == "running":
-            content = f"{header}<br>{body}" if body else header
-            self._c.markdown(content, unsafe_allow_html=True)
+            text = header
+            if self._lines:
+                text += "\n" + "\n".join(self._lines)
+            self._c.text(text)
         else:
             # 完成后折叠，点击可展开查看详细步骤
-            content = f"<details><summary>{header}</summary><br>{body}</details>" if body else header
-            self._c.markdown(content, unsafe_allow_html=True)
+            with self._c:
+                with st.expander(header, expanded=False):
+                    for line in self._lines:
+                        st.text(line)
 
 
 def _step_timer(status, step_num: int, total: int, label: str):

@@ -61,6 +61,8 @@ class CorpDailyAnalysis:
         self.top_killers = []
         self.top_kill_ships = []
         self.top_loss_ships = []
+        self.top_kill_ships_by_isk = []
+        self.top_loss_ships_by_isk = []
         self.top_victims = []
         self.hourly_timeline = []
         self.daily_timeline = []
@@ -96,8 +98,10 @@ class CorpDailyAnalysis:
             self.active_members = repo.query_active_members(eid, self.date_from, self.date_to, entity_type=etype)
 
         self.top_killers = repo.query_top_killers(eid, self.date_from, self.date_to, entity_type=etype)
-        self.top_kill_ships = repo.query_top_kill_ships(eid, self.date_from, self.date_to, entity_type=etype)
-        self.top_loss_ships = repo.query_top_loss_ships(eid, self.date_from, self.date_to, entity_type=etype)
+        self.top_kill_ships = repo.query_top_kill_ships(eid, self.date_from, self.date_to, limit=10, entity_type=etype)
+        self.top_loss_ships = repo.query_top_loss_ships(eid, self.date_from, self.date_to, limit=10, entity_type=etype)
+        self.top_kill_ships_by_isk = repo.query_top_kill_ships(eid, self.date_from, self.date_to, limit=10, entity_type=etype, sort_by="isk")
+        self.top_loss_ships_by_isk = repo.query_top_loss_ships(eid, self.date_from, self.date_to, limit=10, entity_type=etype, sort_by="isk")
         self.top_victims = repo.query_top_victims(eid, self.date_from, self.date_to, entity_type=etype)
         self.hourly_timeline = repo.query_hourly_timeline(eid, self.date_from, self.date_to, entity_type=etype)
         self.daily_timeline = repo.query_daily_timeline(eid, self.date_from, self.date_to, entity_type=etype)
@@ -120,6 +124,12 @@ class CorpDailyAnalysis:
 
         if self.top_loss_ships:
             dfs["top_loss_ships"] = pd.DataFrame(self.top_loss_ships)
+
+        if self.top_kill_ships_by_isk:
+            dfs["top_kill_ships_by_isk"] = pd.DataFrame(self.top_kill_ships_by_isk)
+
+        if self.top_loss_ships_by_isk:
+            dfs["top_loss_ships_by_isk"] = pd.DataFrame(self.top_loss_ships_by_isk)
 
         if self.top_victims:
             dfs["top_victims"] = pd.DataFrame(self.top_victims)

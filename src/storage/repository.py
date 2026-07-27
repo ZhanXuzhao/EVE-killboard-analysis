@@ -224,8 +224,13 @@ def query_top_killers(entity_id: int, date_from: str, date_to: str, limit: int =
         return [dict(r) for r in rows]
 
 
-def query_top_loss_ships(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
-    """被击毁舰船排行 — 本方损失最多的船型。"""
+def query_top_loss_ships(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation", sort_by: str = "count") -> list[dict]:
+    """被击毁舰船排行 — 本方损失最多的船型。
+
+    Args:
+        sort_by: "count"（按击毁数降序）或 "isk"（按总 ISK 降序）
+    """
+    order_clause = "total_isk DESC" if sort_by == "isk" else "count DESC"
     victim_col = _victim_col(entity_type)
     with get_db_read() as conn:
         rows = conn.execute(
@@ -237,7 +242,7 @@ def query_top_loss_ships(entity_id: int, date_from: str, date_to: str, limit: in
             WHERE {victim_col} = ?
               AND killmail_time >= ? AND killmail_time < ?
             GROUP BY victim_ship_type_id
-            ORDER BY count DESC
+            ORDER BY {order_clause}
             LIMIT ?
             """,
             (entity_id, date_from, date_to, limit),
@@ -245,8 +250,13 @@ def query_top_loss_ships(entity_id: int, date_from: str, date_to: str, limit: in
         return [dict(r) for r in rows]
 
 
-def query_top_kill_ships(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
-    """击杀使用舰船排行 — 本方击杀时使用的船型。"""
+def query_top_kill_ships(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation", sort_by: str = "count") -> list[dict]:
+    """击杀使用舰船排行 — 本方击杀时使用的船型。
+
+    Args:
+        sort_by: "count"（按击杀数降序）或 "isk"（按总 ISK 降序）
+    """
+    order_clause = "total_isk DESC" if sort_by == "isk" else "count DESC"
     id_col = _id_col(entity_type)
     with get_db_read() as conn:
         rows = conn.execute(
@@ -261,7 +271,7 @@ def query_top_kill_ships(entity_id: int, date_from: str, date_to: str, limit: in
               AND a.final_blow = 1
               AND k.npc_kill = 0
             GROUP BY a.ship_type_id
-            ORDER BY count DESC
+            ORDER BY {order_clause}
             LIMIT ?
             """,
             (entity_id, date_from, date_to, limit),

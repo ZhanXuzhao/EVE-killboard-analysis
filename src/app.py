@@ -414,6 +414,34 @@ def _apply_zh_region_names(df, name_col: str):
     return df
 
 
+# ── 图表箭头 + 可复制文字列 fragment（通用） ───────────────
+
+@st.fragment
+def _render_chart_with_copy(fig, bil_labels, session_key, _arrow="◀"):
+    """通用 fragment：图表左侧加箭头按钮，点击展开/收起双语文字列。"""
+    _show = st.session_state.setdefault(session_key, False)
+    _arrow = "▶" if _show else "◀"
+    if _show:
+        _rcol_btn, _rcol_text, _rcol_chart = st.columns([0.5, 2, 7.5])
+    else:
+        _rcol_btn, _rcol_chart = st.columns([0.5, 9.5])
+    with _rcol_btn:
+        if st.button(_arrow, key=f"{session_key}_btn", help="点击展开/收起列表（可选中复制）"):
+            st.session_state[session_key] = not _show
+            st.rerun(scope="fragment")
+    if _show:
+        with _rcol_text:
+            _labels = [s.replace("(", " ").replace(")", "") for s in bil_labels][::-1]
+            _text = "\n".join(_labels)
+            st.markdown(
+                f"<div style='font-size:12px;line-height:1.9;user-select:text;"
+                f"-webkit-user-select:text;padding:8px;background:#f7f7f7;"
+                f"border-radius:6px;white-space:pre'>{_text}</div>",
+                unsafe_allow_html=True,
+            )
+    with _rcol_chart:
+        st.plotly_chart(fig, width="stretch")
+
 
 # ── 主逻辑 ──────────────────────────────────────────────
 
@@ -553,13 +581,13 @@ def load_data(date_from, date_to, status):
         return True
 
     # 步骤 3: ESI 名称解析（角色/军团/联盟/舰船）
-    with _step_timer(status, 3, total, "ESI 名称解析（角色/军团/联盟/舰船）"):
+    with _step_timer(status, 3, total, f"ESI 名称解析（角色/军团/联盟/舰船）（{len(results)} 条）"):
         from src.collector.zkillboard import _enrich_killmail_names
         raw_kills = [r["killmail"] for r in results]
         _enrich_killmail_names(raw_kills)
 
     # 步骤 4: ESI 星域解析（星系→星域）
-    with _step_timer(status, 4, total, "ESI 星域解析（星系→星域）"):
+    with _step_timer(status, 4, total, f"ESI 星域解析（星系→星域）（{len(results)} 条）"):
         from src.collector.zkillboard import _enrich_system_regions
         raw_kills = [r["killmail"] for r in results]
         _enrich_system_regions(raw_kills)
@@ -591,7 +619,7 @@ def load_data(date_from, date_to, status):
     status.write(f"   ↳ 拉取{'完整' if complete else '不完整（可能还有下一页）'}")
 
     # 步骤 6: 名称重试（在分析阶段执行）
-    with _step_timer(status, 6, total, "ESI 名称重试回填"):
+    with _step_timer(status, 6, total, f"ESI 名称重试回填（{len(results)} 条）"):
         pass
 
     status._c.empty()
@@ -842,7 +870,8 @@ if entity_id is not None:
                 textposition="outside",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig, width="stretch")
+
+            _render_chart_with_copy(fig, _chart_df["solar_system_region_name_bil"].tolist(), "_show_region_text", "◀")
         else:
             st.info("暂无星域数据")
 
@@ -895,7 +924,7 @@ if entity_id is not None:
                 textposition="outside",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig, width="stretch")
+            _render_chart_with_copy(fig, _chart_df["solar_system_name"].tolist(), "_show_system", "◀")
         else:
             st.info("暂无星系数据")
 
@@ -911,8 +940,9 @@ if entity_id is not None:
             df["display"] = df.apply(
                 lambda r: f"{r['victim_alliance_name']} ({r['kills']})", axis=1
             )
+            _chart_df = df.head(10).iloc[::-1]
             fig = px.bar(
-                df.head(10).iloc[::-1],
+                _chart_df,
                 x="kills",
                 y="display",
                 orientation="h",
@@ -924,7 +954,7 @@ if entity_id is not None:
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
             fig.update_traces(textposition="outside")
-            st.plotly_chart(fig, width="stretch")
+            _render_chart_with_copy(fig, _chart_df["victim_alliance_name"].tolist(), "_show_killed_alliances", "◀")
         else:
             st.info("暂无数据")
 
@@ -936,8 +966,9 @@ if entity_id is not None:
             df["display"] = df.apply(
                 lambda r: f"{r['alliance_name']} ({r['kills']})", axis=1
             )
+            _chart_df = df.head(10).iloc[::-1]
             fig = px.bar(
-                df.head(10).iloc[::-1],
+                _chart_df,
                 x="kills",
                 y="display",
                 orientation="h",
@@ -949,7 +980,7 @@ if entity_id is not None:
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
             fig.update_traces(textposition="outside")
-            st.plotly_chart(fig, width="stretch")
+            _render_chart_with_copy(fig, _chart_df["alliance_name"].tolist(), "_show_attacker_alliances", "◀")
         else:
             st.info("暂无数据")
 
@@ -965,8 +996,9 @@ if entity_id is not None:
             df["display"] = df.apply(
                 lambda r: f"{r['alliance_name']}  ({r['joint_kills']}次)", axis=1
             )
+            _chart_df = df.head(10).iloc[::-1]
             fig = px.bar(
-                df.head(10).iloc[::-1],
+                _chart_df,
                 x="joint_kills",
                 y="display",
                 orientation="h",
@@ -982,7 +1014,7 @@ if entity_id is not None:
                 xaxis_title="联合击杀数",
             )
             fig.update_traces(textposition="outside")
-            st.plotly_chart(fig, width="stretch")
+            _render_chart_with_copy(fig, _chart_df["alliance_name"].tolist(), "_show_joint_kills", "◀")
         else:
             st.info("暂无联合击杀数据")
 
@@ -996,8 +1028,9 @@ if entity_id is not None:
             df["display"] = df.apply(
                 lambda r: f"{r['alliance_name']}  ({r['participant_count']}人)", axis=1
             )
+            _chart_df = df.iloc[::-1]
             fig = px.bar(
-                df.iloc[::-1],
+                _chart_df,
                 x="participant_count",
                 y="display",
                 orientation="h",
@@ -1014,7 +1047,7 @@ if entity_id is not None:
                 coloraxis_colorbar_title="合作击杀数",
             )
             fig.update_traces(textposition="outside")
-            st.plotly_chart(fig, width="stretch")
+            _render_chart_with_copy(fig, _chart_df["alliance_name"].tolist(), "_show_joint_participants", "◀")
         else:
             st.info("暂无联合参战数据")
 
@@ -1022,10 +1055,10 @@ if entity_id is not None:
 
     # ── Row 5: 舰船排行 ───────────────────────────────
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader("🚢 击杀舰船")
+    # Row 1: 击杀舰船
+    c1, c2 = st.columns(2)
+    with c1:
+        st.subheader("🚢 击杀舰船（数量）")
         if "top_kill_ships" in dfs:
             df = dfs["top_kill_ships"].copy()
             df = _apply_zh_ship_names(df, "ship_type_id", "ship_name")
@@ -1055,12 +1088,49 @@ if entity_id is not None:
                 textposition="outside",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig, width="stretch")
+            _render_chart_with_copy(fig, _chart_df["ship_name_bil"].tolist(), "_show_kill_ships")
         else:
             st.info("暂无数据")
 
-    with col2:
-        st.subheader("💀 损失舰船")
+    with c2:
+        st.subheader("🚢 击杀舰船（ISK）")
+        if "top_kill_ships_by_isk" in dfs:
+            df_isk = dfs["top_kill_ships_by_isk"].copy()
+            df_isk = _apply_zh_ship_names(df_isk, "ship_type_id", "ship_name")
+            df_isk["isk_label"] = df_isk["total_isk"].apply(_fmt)
+            _chart_df_isk = df_isk.iloc[::-1]
+            _chart_df_isk["display_isk"] = _chart_df_isk.apply(
+                lambda r: f"{r['ship_name']} ({r['isk_label']})", axis=1
+            )
+            fig_isk = px.bar(
+                _chart_df_isk,
+                x="total_isk",
+                y="display_isk",
+                orientation="h",
+                labels={"total_isk": "总 ISK", "display_isk": "舰船"},
+                color="count",
+                color_continuous_scale="Reds",
+                text="isk_label",
+                hover_data={"total_isk": False, "count": False},
+            )
+            fig_isk.update_traces(
+                hovertemplate=(
+                    "<b>%{customdata[1]}</b><br>"
+                    "击杀: %{customdata[0]}<br>"
+                    "ISK: %{x}<extra></extra>"
+                ),
+                customdata=_chart_df_isk[["count", "ship_name_bil"]].values,
+                textposition="outside",
+            )
+            fig_isk.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
+            _render_chart_with_copy(fig_isk, _chart_df_isk["ship_name_bil"].tolist(), "_show_kill_ships_isk")
+        else:
+            st.info("暂无数据")
+
+    # Row 2: 损失舰船
+    c3, c4 = st.columns(2)
+    with c3:
+        st.subheader("💀 损失舰船（数量）")
         if "top_loss_ships" in dfs:
             df = dfs["top_loss_ships"].copy()
             df = _apply_zh_ship_names(df, "victim_ship_type_id", "victim_ship_name")
@@ -1090,7 +1160,42 @@ if entity_id is not None:
                 textposition="outside",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig, width="stretch")
+            _render_chart_with_copy(fig, _chart_df["victim_ship_name_bil"].tolist(), "_show_loss_ships")
+        else:
+            st.info("暂无数据")
+
+    with c4:
+        st.subheader("💀 损失舰船（ISK）")
+        if "top_loss_ships_by_isk" in dfs:
+            df_isk = dfs["top_loss_ships_by_isk"].copy()
+            df_isk = _apply_zh_ship_names(df_isk, "victim_ship_type_id", "victim_ship_name")
+            df_isk["isk_label"] = df_isk["total_isk"].apply(_fmt)
+            _chart_df_isk = df_isk.iloc[::-1]
+            _chart_df_isk["display_isk"] = _chart_df_isk.apply(
+                lambda r: f"{r['victim_ship_name']} ({r['isk_label']})", axis=1
+            )
+            fig_isk = px.bar(
+                _chart_df_isk,
+                x="total_isk",
+                y="display_isk",
+                orientation="h",
+                labels={"total_isk": "总 ISK", "display_isk": "舰船"},
+                color="count",
+                color_continuous_scale="Reds",
+                text="isk_label",
+                hover_data={"total_isk": False, "count": False},
+            )
+            fig_isk.update_traces(
+                hovertemplate=(
+                    "<b>%{customdata[1]}</b><br>"
+                    "损失: %{customdata[0]}<br>"
+                    "ISK: %{x}<extra></extra>"
+                ),
+                customdata=_chart_df_isk[["count", "victim_ship_name_bil"]].values,
+                textposition="outside",
+            )
+            fig_isk.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
+            _render_chart_with_copy(fig_isk, _chart_df_isk["victim_ship_name_bil"].tolist(), "_show_loss_ships_isk")
         else:
             st.info("暂无数据")
 

@@ -417,8 +417,8 @@ def fetch_entity_kills(
             on_progress(page, len(kills))
 
         # 翻页：zKillboard 首页可能 <200 但还有下一页
-        # 策略：至少试 2 页；之后 <200 才停；最多 100 页防超时
-        if page >= 100:
+        # 策略：至少试 2 页；之后 <200 才停；最多 500 页防超时
+        if page >= 500:
             if len(kills) >= 200:
                 complete = False  # 可能还有更多页未拉取
             break

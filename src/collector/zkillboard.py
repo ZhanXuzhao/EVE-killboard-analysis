@@ -77,8 +77,8 @@ def _load_system_region_cache():
         return
     _SYSTEM_REGION_CACHE.clear()
     try:
-        from src.storage.database import get_db
-        with get_db() as conn:
+        from src.storage.database import get_db_read
+        with get_db_read() as conn:
             rows = conn.execute(
                 "SELECT system_id, region_name FROM system_region_cache"
             ).fetchall()
@@ -94,8 +94,8 @@ def _save_system_region_cache():
     if not _SYSTEM_REGION_CACHE:
         return
     try:
-        from src.storage.database import get_db
-        with get_db() as conn:
+        from src.storage.database import get_db_write
+        with get_db_write() as conn:
             conn.executemany(
                 "INSERT OR REPLACE INTO system_region_cache (system_id, region_name) VALUES (?, ?)",
                 list(_SYSTEM_REGION_CACHE.items()),
@@ -117,8 +117,8 @@ def _load_id_name_cache():
         return
     _ID_NAME_CACHE.clear()
     try:
-        from src.storage.database import get_db
-        with get_db() as conn:
+        from src.storage.database import get_db_read
+        with get_db_read() as conn:
             rows = conn.execute(
                 "SELECT entity_id, name FROM id_name_cache"
             ).fetchall()
@@ -134,8 +134,8 @@ def _save_id_name_cache():
     if not _ID_NAME_CACHE:
         return
     try:
-        from src.storage.database import get_db
-        with get_db() as conn:
+        from src.storage.database import get_db_write
+        with get_db_write() as conn:
             conn.executemany(
                 "INSERT OR REPLACE INTO id_name_cache (entity_id, name) VALUES (?, ?)",
                 list(_ID_NAME_CACHE.items()),

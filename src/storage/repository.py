@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from src.storage.database import get_db
+from src.storage.database import get_db_read, get_db_write
 
 
 # ── 写入 ─────────────────────────────────────────────────
@@ -13,7 +13,7 @@ def save_killmail(killmail: dict, attackers: list[dict], items: list[dict]):
     zkb = killmail.get("zkb", {})
     victim = killmail.get("victim", {})
 
-    with get_db() as conn:
+    with get_db_write() as conn:
         conn.execute(
             """
             INSERT OR IGNORE INTO killmails (
@@ -99,7 +99,7 @@ def save_killmail(killmail: dict, attackers: list[dict], items: list[dict]):
 
 def has_killmail(killmail_id: int) -> bool:
     """检查击杀邮件是否已存在。"""
-    with get_db() as conn:
+    with get_db_read() as conn:
         row = conn.execute(
             "SELECT 1 FROM killmails WHERE killmail_id = ?", (killmail_id,)
         ).fetchone()
@@ -108,7 +108,7 @@ def has_killmail(killmail_id: int) -> bool:
 
 def get_corporation_killmail_ids(corp_id: int, date_from: str, date_to: str) -> list[int]:
     """获取指定军团在时间范围内的击杀 ID 列表（含本方击杀和本方损失）。"""
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             """
             SELECT DISTINCT k.killmail_id FROM killmails k
@@ -129,7 +129,7 @@ def get_corporation_killmail_ids(corp_id: int, date_from: str, date_to: str) -> 
 
 def get_alliance_killmail_ids(alliance_id: int, date_from: str, date_to: str) -> list[int]:
     """获取指定联盟在时间范围内的击杀 ID 列表。"""
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             """
             SELECT DISTINCT k.killmail_id FROM killmails k
@@ -163,7 +163,7 @@ def _victim_col(entity_type: str) -> str:
 
 def query_corp_daily_stats(corp_id: int, date_from: str, date_to: str) -> dict:
     """军团昨日击杀/损失汇总统计。"""
-    with get_db() as conn:
+    with get_db_read() as conn:
         # 本方击杀（攻击者中包含本军团成员）
         kills = conn.execute(
             """
@@ -201,7 +201,7 @@ def query_corp_daily_stats(corp_id: int, date_from: str, date_to: str) -> dict:
 def query_top_killers(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """击杀排行 — 本方成员击杀数排行。"""
     id_col = _id_col(entity_type)
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             f"""
             SELECT a.character_id,
@@ -227,7 +227,7 @@ def query_top_killers(entity_id: int, date_from: str, date_to: str, limit: int =
 def query_top_loss_ships(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """被击毁舰船排行 — 本方损失最多的船型。"""
     victim_col = _victim_col(entity_type)
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             f"""
             SELECT victim_ship_name, victim_ship_type_id,
@@ -248,7 +248,7 @@ def query_top_loss_ships(entity_id: int, date_from: str, date_to: str, limit: in
 def query_top_kill_ships(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """击杀使用舰船排行 — 本方击杀时使用的船型。"""
     id_col = _id_col(entity_type)
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             f"""
             SELECT a.ship_name, a.ship_type_id,
@@ -273,7 +273,7 @@ def query_daily_timeline(entity_id: int, date_from: str, date_to: str, entity_ty
     """每天击杀+损失分布（用于周报）。"""
     id_col = _id_col(entity_type)
     victim_col = _victim_col(entity_type)
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             f"""
             SELECT DATE(k.killmail_time) AS day,
@@ -301,7 +301,7 @@ def query_hourly_timeline(entity_id: int, date_from: str, date_to: str, entity_t
     """24 小时击杀+损失时间分布。"""
     id_col = _id_col(entity_type)
     victim_col = _victim_col(entity_type)
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             f"""
             WITH RECURSIVE hours(h) AS (
@@ -347,7 +347,7 @@ def query_hourly_timeline(entity_id: int, date_from: str, date_to: str, entity_t
 def query_system_hotspots(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """星系热区 — 击杀发生最多的星系。"""
     id_col = _id_col(entity_type)
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             f"""
             SELECT k.solar_system_id, k.solar_system_name,
@@ -373,7 +373,7 @@ def query_active_members(entity_id: int, date_from: str, date_to: str, entity_ty
     """活跃成员数（有击杀或损失记录的成员）。"""
     id_col = _id_col(entity_type)
     victim_col = _victim_col(entity_type)
-    with get_db() as conn:
+    with get_db_read() as conn:
         row = conn.execute(
             f"""
             SELECT COUNT(DISTINCT entity_id) AS count FROM (
@@ -397,7 +397,7 @@ def query_active_members(entity_id: int, date_from: str, date_to: str, entity_ty
 def query_top_victims(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """受害者排行 — 被本方击杀最多的角色。"""
     id_col = _id_col(entity_type)
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             f"""
             SELECT k.victim_character_id,
@@ -424,7 +424,7 @@ def query_top_victims(entity_id: int, date_from: str, date_to: str, limit: int =
 def query_region_hotspots(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """星域热区 — 击杀发生最多的星域。"""
     id_col = _id_col(entity_type)
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             f"""
             SELECT k.solar_system_region_name,
@@ -450,7 +450,7 @@ def query_region_hotspots(entity_id: int, date_from: str, date_to: str, limit: i
 def query_top_killed_alliances(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
     """杀的最多的联盟 — 本方击杀的受害者所属联盟排行。"""
     id_col = _id_col(entity_type)
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             f"""
             SELECT k.victim_alliance_name,
@@ -481,7 +481,7 @@ def query_top_attacker_alliances(entity_id: int, date_from: str, date_to: str, l
     ISK = 仅统计 final_blow 拿人头的击杀价值（避免重复计数）
     """
     victim_col = _victim_col(entity_type)
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             f"""
             WITH kills_by_alliance AS (
@@ -534,7 +534,7 @@ def retry_null_names():
     _headers = {"User-Agent": USER_AGENT}
     _updated = 0
 
-    with get_db() as conn:
+    with get_db_write() as conn:
         # -- 收集 attacker 中缺名的 character_id --
         rows = conn.execute(
             "SELECT DISTINCT character_id FROM attackers "
@@ -648,7 +648,7 @@ def retry_null_names():
 
 def get_fetch_log(entity_id: int, entity_type: str, date_from: str, date_to: str) -> Optional[dict]:
     """查询指定范围的数据拉取记录，没有则返回 None。"""
-    with get_db() as conn:
+    with get_db_read() as conn:
         row = conn.execute(
             "SELECT * FROM fetch_log WHERE entity_id=? AND entity_type=? AND date_from=? AND date_to=?",
             (entity_id, entity_type, date_from, date_to),
@@ -659,7 +659,7 @@ def get_fetch_log(entity_id: int, entity_type: str, date_from: str, date_to: str
 def upsert_fetch_log(entity_id: int, entity_type: str, date_from: str, date_to: str,
                      killmail_count: int, complete: bool):
     """写入/更新拉取记录。"""
-    with get_db() as conn:
+    with get_db_write() as conn:
         conn.execute(
             """INSERT OR REPLACE INTO fetch_log
                (entity_id, entity_type, date_from, date_to, fetched_at, killmail_count, complete)
@@ -713,7 +713,7 @@ def query_joint_kills_alliances(entity_id: int, date_from: str, date_to: str, li
     按合作击杀数和总 ISK 排序，同时返回各联盟参战人数。
     """
     id_col = _id_col(entity_type)
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             f"""
             SELECT a2.alliance_id,
@@ -745,7 +745,7 @@ def query_joint_kills_participants(entity_id: int, date_from: str, date_to: str,
     按参战人数排序（不含本方）。
     """
     id_col = _id_col(entity_type)
-    with get_db() as conn:
+    with get_db_read() as conn:
         rows = conn.execute(
             f"""
             SELECT a2.alliance_id,
@@ -772,7 +772,7 @@ def query_joint_kills_participants(entity_id: int, date_from: str, date_to: str,
 
 def query_alliance_daily_stats(alliance_id: int, date_from: str, date_to: str) -> dict:
     """联盟昨日击杀/损失汇总统计。"""
-    with get_db() as conn:
+    with get_db_read() as conn:
         kills = conn.execute(
             """
             SELECT COUNT(DISTINCT k.killmail_id) AS count,
@@ -807,7 +807,7 @@ def query_alliance_daily_stats(alliance_id: int, date_from: str, date_to: str) -
 
 def query_alliance_active_members(alliance_id: int, date_from: str, date_to: str) -> int:
     """联盟活跃成员数。"""
-    with get_db() as conn:
+    with get_db_read() as conn:
         row = conn.execute(
             """
             SELECT COUNT(DISTINCT entity_id) AS count FROM (

@@ -414,6 +414,32 @@ def _apply_zh_region_names(df, name_col: str):
     return df
 
 
+# ── 图表箭头 + 可复制文字列 fragment（通用） ───────────────
+
+@st.fragment
+def _render_chart_with_copy(fig, bil_labels, session_key, btn_label="◀"):
+    """通用 fragment：图表左侧加箭头按钮，点击展开/收起双语文字列。"""
+    _show = st.session_state.setdefault(session_key, False)
+    if _show:
+        _rcol_btn, _rcol_text, _rcol_chart = st.columns([0.5, 2, 7.5])
+    else:
+        _rcol_btn, _rcol_chart = st.columns([0.5, 9.5])
+    with _rcol_btn:
+        if st.button(btn_label, key=f"{session_key}_btn", help="点击展开/收起列表（可选中复制）"):
+            st.session_state[session_key] = not _show
+    if _show:
+        with _rcol_text:
+            _labels = [s.replace("(", " ").replace(")", "") for s in bil_labels]
+            _text = "\n".join(_labels)
+            st.markdown(
+                f"<div style='font-size:13px;line-height:2;user-select:text;"
+                f"-webkit-user-select:text;padding:10px;background:#f7f7f7;"
+                f"border-radius:6px;white-space:pre'>{_text}</div>",
+                unsafe_allow_html=True,
+            )
+    with _rcol_chart:
+        st.plotly_chart(fig, width="stretch")
+
 
 # ── 主逻辑 ──────────────────────────────────────────────
 
@@ -842,7 +868,32 @@ if entity_id is not None:
                 textposition="outside",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig, width="stretch")
+
+            # ── 箭头按钮 + 可复制文字列（用 fragment 隔离，点击不触发全局刷新） ──
+            @st.fragment
+            def _render_region_chart(fig, _chart_df):
+                _show = st.session_state.setdefault("_show_region_text", False)
+                if _show:
+                    _rcol_btn, _rcol_text, _rcol_chart = st.columns([0.5, 2, 7.5])
+                else:
+                    _rcol_btn, _rcol_chart = st.columns([0.5, 9.5])
+                with _rcol_btn:
+                    if st.button("◀", key="region_copy_btn", help="点击展开/收起星域列表（可选中复制）"):
+                        st.session_state._show_region_text = not _show
+                if _show:
+                    with _rcol_text:
+                        _labels = _chart_df["solar_system_region_name_bil"].str.replace("(", " ").str.replace(")", "").tolist()
+                        _text = "\n".join(_labels)
+                        st.markdown(
+                            f"<div style='font-size:13px;line-height:2;user-select:text;"
+                            f"-webkit-user-select:text;padding:10px;background:#f7f7f7;"
+                            f"border-radius:6px;white-space:pre'>{_text}</div>",
+                            unsafe_allow_html=True,
+                        )
+                with _rcol_chart:
+                    st.plotly_chart(fig, width="stretch")
+
+            _render_region_chart(fig, _chart_df)
         else:
             st.info("暂无星域数据")
 
@@ -1055,7 +1106,7 @@ if entity_id is not None:
                 textposition="outside",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig, width="stretch")
+            _render_chart_with_copy(fig, _chart_df["ship_name_bil"].tolist(), "_show_kill_ships")
         else:
             st.info("暂无数据")
 
@@ -1090,7 +1141,7 @@ if entity_id is not None:
                 textposition="outside",
             )
             fig_isk.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig_isk, width="stretch")
+            _render_chart_with_copy(fig_isk, _chart_df_isk["ship_name_bil"].tolist(), "_show_kill_ships_isk")
         else:
             st.info("暂无数据")
 
@@ -1127,7 +1178,7 @@ if entity_id is not None:
                 textposition="outside",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig, width="stretch")
+            _render_chart_with_copy(fig, _chart_df["victim_ship_name_bil"].tolist(), "_show_loss_ships")
         else:
             st.info("暂无数据")
 
@@ -1162,7 +1213,7 @@ if entity_id is not None:
                 textposition="outside",
             )
             fig_isk.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            st.plotly_chart(fig_isk, width="stretch")
+            _render_chart_with_copy(fig_isk, _chart_df_isk["victim_ship_name_bil"].tolist(), "_show_loss_ships_isk")
         else:
             st.info("暂无数据")
 

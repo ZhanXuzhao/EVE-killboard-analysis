@@ -410,7 +410,7 @@ def load_data(date_from, date_to, status):
     with _step_timer(status, 1, total, "检查本地缓存"):
         if is_cache_valid(entity_id, etype, date_from, date_to):
             status.write("📦 本地数据有效，跳过 API 请求")
-            status.update(label="数据加载完成（缓存有效）", state="complete")
+            status.update(label="数据分析中...", state="running")
             status._c.empty()
             return True
 

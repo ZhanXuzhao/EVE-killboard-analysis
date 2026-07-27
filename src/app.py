@@ -540,8 +540,7 @@ if entity_id is not None:
             )
 
         _total_elapsed = time.time() - _total_start
-        status.write(f"📊 所有步骤总耗时: {_total_elapsed:.1f}s")
-        status.update(label="数据分析完成 ✓", state="complete")
+        status.update(label=f"数据分析完成 ✓ 总耗时: {_total_elapsed:.1f}s", state="complete")
         st.session_state.data_loaded = True
     else:
         # 后续 rerun：直接从数据库读取分析结果

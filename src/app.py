@@ -44,6 +44,121 @@ def _debug(msg: str):
         st.session_state._debug_logs = st.session_state._debug_logs[-50:]
 
 
+# ── 回调函数 ────────────────────────────────────────────
+
+def _cb_search():
+    """搜索表单提交回调：解析输入并设置 entity session_state。"""
+    raw = st.session_state.get("search_input", "").strip()
+    if not raw:
+        return
+    st.session_state._last_input = raw
+    st.session_state.entity_id = None
+    st.session_state.entity_name = None
+    st.session_state.entity_type = None
+    st.session_state.data_loaded = False
+    st.session_state._search_options = None
+    st.session_state.pop("_search_msg", None)
+
+    if raw.isdigit():
+        _resolve_numeric_id(int(raw))
+    else:
+        _search_by_name(raw)
+
+
+def _resolve_numeric_id(cid: int):
+    """回调辅助：解析纯数字 ID。"""
+    detected_type = "corporation"
+    try:
+        import requests as _req
+        _resp = _req.post(
+            "https://esi.evetech.net/latest/universe/names/",
+            json=[cid],
+            headers={"User-Agent": "EVE-Killboard-Analysis/1.0"},
+            timeout=10,
+        )
+        _data = _resp.json()
+        if isinstance(_data, list) and len(_data) > 0:
+            item = _data[0]
+            st.session_state.entity_name = item.get("name", str(cid))
+            cat = item.get("category", "")
+            if cat in ("alliance", "corporation"):
+                detected_type = cat
+        else:
+            st.session_state.entity_name = str(cid)
+    except Exception:
+        st.session_state.entity_name = str(cid)
+    st.session_state.entity_id = cid
+    st.session_state.entity_type = detected_type
+    st.session_state._pending_rerun = True
+
+
+def _search_by_name(name: str):
+    """回调辅助：按名称搜索军团/联盟。"""
+    try:
+        results = search_entities(name)
+    except Exception as e:
+        st.session_state._search_msg = ("error", f"❌ 搜索失败: {e}")
+        return
+
+    corps = results.get("corporation", [])
+    alliances = results.get("alliance", [])
+    all_options = []
+
+    if not corps and not alliances:
+        st.session_state._search_msg = ("error", f"❌ 未找到匹配「{name}」的军团或联盟")
+        return
+
+    if alliances:
+        all_options.append(("── 联盟 ──", None, None))
+        for a in alliances:
+            all_options.append((f"{a['name']} (ID: {a['id']})", a["id"], "alliance"))
+    if corps:
+        all_options.append(("── 军团 ──", None, None))
+        for c in corps:
+            all_options.append((f"{c['name']} (ID: {c['id']})", c["id"], "corporation"))
+
+    non_sep = [o for o in all_options if o[1] is not None]
+    if len(non_sep) == 1:
+        st.session_state.entity_id = non_sep[0][1]
+        st.session_state.entity_name = non_sep[0][0].split(" (ID:")[0]
+        st.session_state.entity_type = non_sep[0][2]
+        st.session_state._pending_rerun = True
+        label = "联盟" if st.session_state.entity_type == "alliance" else "军团"
+        st.session_state._search_msg = ("success", f"✅ 已匹配 {label}: **{st.session_state.entity_name}**")
+    else:
+        st.session_state._search_options = all_options
+
+
+def _cb_select_entity():
+    """搜索结果 radio 选择回调。"""
+    selected = st.session_state.get("_search_radio")
+    if not selected:
+        return
+    opts = st.session_state.get("_search_options", [])
+    for label_t, eid, etype in opts:
+        if label_t == selected and eid is not None:
+            st.session_state.entity_id = eid
+            st.session_state.entity_name = label_t.split(" (ID:")[0]
+            st.session_state.entity_type = etype
+            st.session_state.data_loaded = False
+            st.session_state._search_options = None
+            st.session_state._pending_rerun = True
+            break
+
+
+def _cb_history_click(h: dict):
+    """历史记录按钮回调。"""
+    st.session_state.entity_id = h["id"]
+    st.session_state.entity_name = h["name"]
+    st.session_state.entity_type = h["type"]
+    st.session_state.data_loaded = False
+    st.session_state._last_input = str(h["id"])
+    st.session_state._input_value = h.get("ticker", h["name"])
+    st.session_state.search_input = h.get("ticker", h["name"])
+    st.session_state._pending_rerun = True
+    _debug(f"hist_click: {h['name']} <{h.get('ticker','')}>")
+
+
 
 # ── 页面配置 ────────────────────────────────────────────
 
@@ -86,7 +201,7 @@ def render_title(corp_name: str = None):
 
 # 默认输入：D.C (Dracarys.)
 DEFAULT_ENTITY_ID = "D.C"
-DEFAULT_ENTITY_RESOLVE = (99009163, "Dracarys. <D.C>", "alliance")
+DEFAULT_ENTITY_RESOLVE = (99009163, "Dracarys.", "alliance")
 
 with st.sidebar:
     st.header("⚙️ 设置")
@@ -150,106 +265,40 @@ with st.sidebar:
         _debug(f"date_change: {selected_date} type={report_type}")
         st.rerun()
 
-    # ── 搜索表单（仅按 Enter 或点击按钮时触发） ──────
+    # ── 搜索输入（内联方式，避免额外 rerun） ─────────
+
+    if "search_input" not in st.session_state:
+        st.session_state.search_input = st.session_state.get("_input_value", DEFAULT_ENTITY_ID)
 
     with st.form(key="search_form"):
-        corp_input = st.text_input(
-            "军团名称 / ID",
-            value=st.session_state.get("_input_value", DEFAULT_ENTITY_ID),
+        st.text_input(
+            "军团/联盟名称或代码",
+            key="search_input",
             placeholder="例如: Goonswarm Federation 或 987654321",
             help="输入军团名称（自动搜索）或直接输入数字 ID",
         )
-        analyze_btn = st.form_submit_button("📊 分析", type="primary", use_container_width=True)
+        if st.form_submit_button("📊 分析", type="primary", use_container_width=True):
+            _cb_search()
 
-        # 表单提交时才执行搜索/解析
+    # 显示搜索消息（成功/错误）
+    _msg = st.session_state.pop("_search_msg", None)
+    if _msg:
+        mtype, mtext = _msg
+        if mtype == "success":
+            st.success(mtext)
+        elif mtype == "error":
+            st.error(mtext)
 
-        # 表单提交时才执行搜索/解析
-        if analyze_btn:
-            st.session_state._last_input = corp_input.strip()
-            st.session_state.entity_id = None
-            st.session_state.entity_name = None
-            st.session_state.entity_type = None
-            st.session_state.data_loaded = False
-
-            if corp_input.strip().isdigit():
-                # 纯数字 → 解析 ID
-                corp_id_int = int(corp_input.strip())
-                detected_type = "corporation"
-                try:
-                    import requests as _req
-                    _resp = _req.post(
-                        "https://esi.evetech.net/latest/universe/names/",
-                        json=[corp_id_int],
-                        headers={"User-Agent": "EVE-Killboard-Analysis/1.0"},
-                        timeout=10,
-                    )
-                    _data = _resp.json()
-                    if isinstance(_data, list) and len(_data) > 0:
-                        item = _data[0]
-                        st.session_state.entity_name = item.get("name", str(corp_id_int))
-                        cat = item.get("category", "")
-                        if cat in ("alliance", "corporation"):
-                            detected_type = cat
-                    else:
-                        st.session_state.entity_name = str(corp_id_int)
-                except Exception:
-                    st.session_state.entity_name = str(corp_id_int)
-                st.session_state.entity_id = corp_id_int
-                st.session_state.entity_type = detected_type
-                st.session_state._input_value = str(corp_id_int)
-            else:
-                # 文字 → 搜索军团和联盟
-                with st.spinner(f"正在搜索「{corp_input.strip()}」..."):
-                    results = search_entities(corp_input.strip())
-
-                corps = results.get("corporation", [])
-                alliances = results.get("alliance", [])
-                all_options = []
-
-                if corps or alliances:
-                    if alliances:
-                        all_options.append(("── 联盟 ──", None, None))
-                        for a in alliances:
-                            all_options.append((f"{a['name']} (ID: {a['id']})", a["id"], "alliance"))
-                    if corps:
-                        all_options.append(("── 军团 ──", None, None))
-                        for c in corps:
-                            all_options.append((f"{c['name']} (ID: {c['id']})", c["id"], "corporation"))
-
-                    st.session_state._search_options = all_options
-                    st.session_state._search_input = corp_input.strip()
-
-                    non_sep = [o for o in all_options if o[1] is not None]
-                    if len(non_sep) == 1:
-                        st.session_state.entity_id = non_sep[0][1]
-                        st.session_state.entity_name = non_sep[0][0].split(" (ID:")[0]
-                        st.session_state.entity_type = non_sep[0][2]
-                        st.session_state._search_options = None
-                        st.session_state._input_value = str(non_sep[0][1])
-                        label = "联盟" if st.session_state.entity_type == "alliance" else "军团"
-                        st.success(f"✅ 已匹配 {label}: **{st.session_state.entity_name}**")
-                else:
-                    st.error(f"❌ 未找到匹配「{corp_input.strip()}」的军团或联盟")
-
-    # ── 搜索结果（表单外渲染以维持 widget 状态） ─────
+    # ── 搜索结果（多选 radio，回调方式） ────────────
 
     _search_opts = st.session_state.get("_search_options")
-    _search_inp = st.session_state.get("_search_input")
-    if _search_opts and _search_inp and corp_input.strip() == _search_inp and st.session_state.entity_id is None:
-        selected = st.radio(
+    if _search_opts and st.session_state.entity_id is None:
+        st.radio(
             "🔍 找到多个匹配，请选择:",
             options=[o[0] for o in _search_opts],
-            index=0,
+            key="_search_radio",
+            on_change=_cb_select_entity,
         )
-        for label_t, eid, etype in _search_opts:
-            if label_t == selected and eid is not None:
-                st.session_state.entity_id = eid
-                st.session_state.entity_name = label_t.split(" (ID:")[0]
-                st.session_state.entity_type = etype
-                st.session_state.data_loaded = False
-                st.session_state._search_selected = True
-                st.session_state._input_value = str(eid)
-                break
 
     # ── 查询历史（仅渲染按钮，不自动移动） ─────
 
@@ -266,17 +315,8 @@ with st.sidebar:
         for i, h in enumerate(st.session_state.query_history[:9]):
             with cols[i % 3]:
                 label = f"{h.get('ticker', h['name'])}"
-                if st.button(label, key=f"hist_{i}", use_container_width=True):
-                    st.session_state.entity_id = h["id"]
-                    st.session_state.entity_name = h["name"]
-                    st.session_state.entity_type = h["type"]
-                    st.session_state.data_loaded = False
-                    st.session_state._last_input = str(h["id"])
-                    st.session_state._history_click = True
-                    st.session_state._history_trigger = True
-                    st.session_state._input_value = h.get("ticker", h["name"])
-                    st.session_state._pending_rerun = True
-                    _debug(f"hist_click: {h['name']} <{h.get('ticker','')}>")
+                st.button(label, key=f"hist_{i}", use_container_width=True,
+                          on_click=_cb_history_click, args=(h,))
 
     # ── localStorage ↔ URL 参数双向同步 ─────────────
     # 首次访问时从 localStorage 恢复历史；后续每次自动备份到 localStorage
@@ -377,11 +417,8 @@ def _apply_zh_region_names(df, name_col: str):
 
 # ── 主逻辑 ──────────────────────────────────────────────
 
-# 处理历史点击
-if st.session_state.get("_history_click"):
-    st.session_state._history_click = False
-
-# 首次加载：自动处理默认数字 ID + 触发分析
+# 首次加载：设置默认实体
+# 数据加载由 entity_id != None && data_loaded == False 自动触发
 if "auto_triggered" not in st.session_state:
     st.session_state.auto_triggered = True
     if st.session_state.entity_id is None:
@@ -391,24 +428,14 @@ if "auto_triggered" not in st.session_state:
         st.session_state.entity_type = _dtype
         st.session_state._last_input = DEFAULT_ENTITY_ID
         st.session_state._input_value = DEFAULT_ENTITY_ID
-    if st.session_state.entity_id is not None:
-        analyze_btn = True
 
 entity_id = st.session_state.entity_id
 entity_name = st.session_state.entity_name
 entity_type = st.session_state.entity_type
 
-# 点击最近查询记录 → 直接触发分析
-if st.session_state.pop("_history_trigger", False):
-    analyze_btn = True
-
 if entity_id is None:
-    st.info("👈 请在左侧输入军团名称或 ID")
+    st.info("👈 请在左侧输入或选择军团/联盟名称")
     st.stop()
-
-# 从搜索结果中选中了实体 → 自动触发分析
-if st.session_state.pop("_search_selected", False):
-    analyze_btn = True
 
 
 # ── 数据加载 ────────────────────────────────────────────
@@ -631,7 +658,7 @@ if entity_id is not None:
     # 数据加载完成后统一保存历史
     _save_history(entity_id, entity_name, entity_type, _ticker or "")
 
-    # 历史按钮点击后 rerun 一次，让侧边栏 UI 刷新
+    # 新查询/历史点击后 rerun 一次，让侧边栏 UI 刷新查询历史
     if st.session_state.pop("_pending_rerun", False):
         st.rerun()
 
@@ -1104,4 +1131,4 @@ if entity_id is not None:
 
 else:
     render_title()
-    st.info("👈 请在左侧输入军团名称或 ID")
+    st.info("👈 请在左侧输入或选择军团/联盟名称")

@@ -13,6 +13,7 @@ from src.config import (
 )
 from src.storage.database import (
     batch_get_id_names,
+    batch_get_system_data,
     batch_get_system_regions,
     batch_set_id_names,
     set_system_region,
@@ -74,7 +75,7 @@ def _batch_resolve_ids(id_batch: list[int]) -> dict[int, str]:
 
 
 def _enrich_system_regions(kills: list[dict]) -> list[dict]:
-    """解析星系 ID 对应的星域名称并注入。
+    """解析星系 ID 对应的星域名称及安全等级并注入。
 
     流程：星系 → 星座(获取 region_id) → 星域(获取名称)
     所有缓存直接读写 SQLite，无全局内存变量，线程安全。
@@ -89,16 +90,21 @@ def _enrich_system_regions(kills: list[dict]) -> list[dict]:
     if not all_system_ids:
         return kills
 
-    # 从 SQLite 批量查询已缓存的星系→星域
+    # 从 SQLite 批量查询已缓存的星系数据
     cached = batch_get_system_regions(sorted(all_system_ids))
+    sec_data = batch_get_system_data(sorted(all_system_ids))
 
-    # 找出未缓存的星系 ID
+    # 找出未缓存的星系 ID，或已缓存但缺少安全等级
     uncached = sorted(sid for sid in all_system_ids if sid not in cached)
+    missing_sec = sorted(sid for sid in all_system_ids
+                         if sid in cached and sec_data.get(sid, {}).get("security_status") is None)
 
-    if uncached:
-        # 步骤1: 获取每个星系的 constellation_id
+    if uncached or missing_sec:
+        # 步骤1: 获取每个星系的 constellation_id 和 security_status
         sys_to_const: dict[int, int] = {}
-        for sid in uncached:
+        sys_to_sec: dict[int, float] = {}
+        need_fetch = sorted(set(uncached + missing_sec))
+        for sid in need_fetch:
             try:
                 resp = _session.get(
                     f"https://esi.evetech.net/latest/universe/systems/{sid}/",
@@ -107,8 +113,11 @@ def _enrich_system_regions(kills: list[dict]) -> list[dict]:
                 resp.raise_for_status()
                 info = resp.json()
                 cid = info.get("constellation_id")
+                ss = info.get("security_status")
                 if cid:
                     sys_to_const[sid] = cid
+                if ss is not None:
+                    sys_to_sec[sid] = round(ss, 2)
             except Exception as e:
                 logger.warning(f"ESI 星系查询失败 (system={sid}): {e}")
 
@@ -139,47 +148,45 @@ def _enrich_system_regions(kills: list[dict]) -> list[dict]:
                     batch = id_list[i:i + 1000]
                     region_name_map.update(_batch_resolve_ids(batch))
 
-                # 步骤4: 将新结果（英文名）写入 SQLite
-                for sid in uncached:
+                # 步骤4: 将新结果写入 SQLite
+                for sid in need_fetch:
                     cid = sys_to_const.get(sid)
                     rid = const_to_region.get(cid) if cid else None
                     rname = region_name_map.get(rid) if rid else None
+                    ss = sys_to_sec.get(sid)
                     if rname:
                         cached[sid] = rname
                         try:
-                            set_system_region(sid, rname)
+                            set_system_region(sid, rname, security_status=ss)
                         except Exception as e:
                             logger.warning(f"写入星域缓存失败 (system={sid}): {e}")
+                    elif ss is not None and sid in cached:
+                        # 已有 region_name，只需更新安全等级
+                        try:
+                            set_system_region(sid, cached[sid], security_status=ss)
+                        except Exception as e:
+                            logger.warning(f"更新安全等级失败 (system={sid}): {e}")
+        elif sys_to_sec:
+            # 只有安全等级数据（没有星座/星域数据），更新已有缓存的记录
+            for sid in need_fetch:
+                ss = sys_to_sec.get(sid)
+                if ss is not None and sid in cached:
+                    try:
+                        set_system_region(sid, cached[sid], security_status=ss)
+                    except Exception as e:
+                        logger.warning(f"更新安全等级失败 (system={sid}): {e}")
 
-    # 注入 region_name（英文）到每个击杀
+    # 重新查询完整的安全等级数据（含本次新增）
+    sec_data = batch_get_system_data(sorted(all_system_ids))
+
+    # 注入 region_name 和 security_status 到每个击杀
     for km in kills:
         sid = km.get("solar_system_id")
         if sid in cached:
             km["solar_system_region_name"] = cached[sid]
-
-    return kills
-    cached_en_names = {cached[s] for s in all_system_ids if s in cached
-                       and cached[s] not in region_zh.values()}
-    if cached_en_names and region_ids:
-        # 对之前已缓存但可能仍是英文的星域，也补查中文
-        for rid in sorted(region_ids):
-            if rid not in region_zh:
-                try:
-                    resp = _session.get(
-                        f"https://esi.evetech.net/latest/universe/regions/{rid}/?language=zh",
-                        timeout=REQUEST_TIMEOUT,
-                    )
-                    resp.raise_for_status()
-                    region_zh[rid] = resp.json().get("name", "")
-                except Exception as e:
-                    logger.warning(f"ESI 补查星域中文名失败 (region={rid}): {e}")
-        # 利用已有的 rid→中文 映射，用英文名反向查找更新 cached
-        en_to_zh = {region_name_map.get(rid): zh for rid, zh in region_zh.items()
-                    if rid in region_name_map and zh}
-        for km in kills:
-            en = km.get("solar_system_region_name")
-            if en in en_to_zh:
-                km["solar_system_region_name"] = en_to_zh[en]
+        sd = sec_data.get(sid, {})
+        if sd.get("security_status") is not None:
+            km["system_security_status"] = sd["security_status"]
 
     return kills
 

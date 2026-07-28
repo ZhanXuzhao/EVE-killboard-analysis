@@ -924,8 +924,34 @@ if entity_id is not None:
             except Exception:
                 df["region_name"] = ""
                 df["region_name_bil"] = ""
+            # 按需回填缺失的安全等级
+            missing_sec = df[df["security_status"].isna()]["solar_system_id"].dropna().unique().tolist()
+            if missing_sec:
+                import requests as _req
+                from src.storage.database import set_system_region, batch_get_system_regions
+                cached_regions = batch_get_system_regions(missing_sec)
+                for sid in missing_sec:
+                    try:
+                        _r = _req.get(
+                            f"https://esi.evetech.net/latest/universe/systems/{int(sid)}/",
+                            timeout=10,
+                        )
+                        _r.raise_for_status()
+                        _info = _r.json()
+                        _ss = _info.get("security_status")
+                        if _ss is not None:
+                            _ss = round(_ss, 2)
+                            _rname = cached_regions.get(sid, _info.get("name", ""))
+                            set_system_region(int(sid), _rname, security_status=_ss)
+                            df.loc[df["solar_system_id"] == sid, "security_status"] = _ss
+                    except Exception:
+                        pass
             df["display"] = df.apply(
-                lambda r: f"{r['solar_system_name']} ({r['kills']})",
+                lambda r: (
+                    f"{r['solar_system_name']} [{r['security_status']:.1f}]"
+                    if pd.notna(r.get("security_status"))
+                    else r['solar_system_name']
+                ),
                 axis=1,
             )
             _chart_df = df.head(10).iloc[::-1]

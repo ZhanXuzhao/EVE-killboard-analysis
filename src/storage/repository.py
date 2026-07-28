@@ -362,8 +362,10 @@ def query_system_hotspots(entity_id: int, date_from: str, date_to: str, limit: i
             f"""
             SELECT k.solar_system_id, k.solar_system_name,
                    COUNT(DISTINCT k.killmail_id) AS kills,
-                   COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
+                   COALESCE(SUM(k.isk_destroyed), 0) AS total_isk,
+                   src.security_status
             FROM killmails k
+            LEFT JOIN system_region_cache src ON src.system_id = k.solar_system_id
             WHERE k.killmail_time >= ? AND k.killmail_time < ?
               AND EXISTS (
                   SELECT 1 FROM attackers a

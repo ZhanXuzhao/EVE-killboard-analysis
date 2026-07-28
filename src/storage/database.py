@@ -134,8 +134,9 @@ def init_db():
 
             -- 星系→星域缓存表
             CREATE TABLE IF NOT EXISTS system_region_cache (
-                system_id    INTEGER PRIMARY KEY,
-                region_name  TEXT NOT NULL
+                system_id        INTEGER PRIMARY KEY,
+                region_name      TEXT NOT NULL,
+                security_status  REAL
             );
 
             -- 中英文翻译对照表（舰船/物品/星域等）
@@ -148,6 +149,14 @@ def init_db():
 
         # 兼容旧数据库：新增列
         for col in ["solar_system_region_name"]:
+            try:
+                conn.execute(f"ALTER TABLE killmails ADD COLUMN {col} TEXT")
+            except sqlite3.OperationalError:
+                pass  # 列已存在
+        try:
+            conn.execute("ALTER TABLE system_region_cache ADD COLUMN security_status REAL")
+        except sqlite3.OperationalError:
+            pass
             try:
                 conn.execute(f"ALTER TABLE killmails ADD COLUMN {col} TEXT")
             except sqlite3.OperationalError:
@@ -321,12 +330,25 @@ def batch_get_system_regions(system_ids: list[int]) -> dict[int, str]:
         return {row["system_id"]: row["region_name"] for row in rows}
 
 
-def set_system_region(system_id: int, region_name: str):
+def batch_get_system_data(system_ids: list[int]) -> dict[int, dict]:
+    """批量查询缓存中的星系数据（星域名 + 安全等级）。"""
+    if not system_ids:
+        return {}
+    placeholders = ",".join("?" * len(system_ids))
+    with get_db_read() as conn:
+        rows = conn.execute(
+            f"SELECT system_id, region_name, security_status FROM system_region_cache WHERE system_id IN ({placeholders})",
+            system_ids,
+        ).fetchall()
+        return {row["system_id"]: {"region_name": row["region_name"], "security_status": row["security_status"]} for row in rows}
+
+
+def set_system_region(system_id: int, region_name: str, security_status: float = None):
     """写入星系→星域到缓存。"""
     with get_db_write() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO system_region_cache (system_id, region_name) VALUES (?, ?)",
-            (system_id, region_name),
+            "INSERT OR REPLACE INTO system_region_cache (system_id, region_name, security_status) VALUES (?, ?, ?)",
+            (system_id, region_name, security_status),
         )
 
 

@@ -1252,41 +1252,88 @@ if entity_id is not None:
         else:
             st.info("暂无数据")
 
-    # ── 第三行：击杀排行表格 ─────────────────────────────
+    # ── 样式辅助 ──────────────────────────────────────
 
-    st.subheader("🏆 击杀排行")
-    if "top_killers" in dfs:
-        df = dfs["top_killers"].copy()
-        # ISK 转为百万单位（保留数值，可排序）
-        df["isk_m"] = (df["total_isk"] / 1_000_000).astype(int)
-        display_df = df[
-            ["character_name", "corporation_name", "alliance_name", "kills", "isk_m"]
-        ]
-        display_df.columns = ["角色名", "军团", "联盟", "击杀次数", "总 ISK (M)"]
+    def _style_kill_df(display_df, cmap="Greens"):
+        """对次数和 ISK 列应用颜色渐变。"""
+        num_cols = [display_df.columns[-2], display_df.columns[-1]]
+        return display_df.style.background_gradient(
+            subset=num_cols, cmap=cmap, low=0.15, high=0.85
+        )
 
-        display_df.index = range(1, len(display_df) + 1)
-        display_df.index.name = "排名"
+    def _style_loss_df(display_df, cmap="Reds"):
+        num_cols = [display_df.columns[-2], display_df.columns[-1]]
+        return display_df.style.background_gradient(
+            subset=num_cols, cmap=cmap, low=0.15, high=0.85
+        )
 
-        st.dataframe(display_df, width="stretch")
-    else:
-        st.info("暂无击杀排行数据")
+    # ── 第三行：击杀排行（按数量 | 按 ISK）─────────────
 
-    # ── 第四行：受害者排行 ────────────────────────────────
+    col_k1, col_k2 = st.columns(2)
 
-    st.subheader("🎯 被杀排行")
-    if "top_victims" in dfs:
-        df = dfs["top_victims"].copy()
-        df["isk_m"] = (df["total_isk"] / 1_000_000).astype(int)
-        display_df = df[
-            ["victim_character_name", "victim_corporation_name", "victim_alliance_name", "count", "isk_m"]
-        ]
-        display_df.columns = ["角色名", "军团", "联盟", "被击杀次数", "总 ISK (M)"]
-        display_df.index = range(1, len(display_df) + 1)
-        display_df.index.name = "排名"
+    with col_k1:
+        st.subheader("🏆 击杀排行（按数量）")
+        if "top_killers" in dfs:
+            df = dfs["top_killers"].copy()
+            df["isk_m"] = (df["total_isk"] / 1_000_000).astype(int)
+            display_df = df[
+                ["character_name", "corporation_name", "kills", "isk_m"]
+            ]
+            display_df.columns = ["角色名", "军团", "击杀次数", "总 ISK (M)"]
+            display_df.index = range(1, len(display_df) + 1)
+            display_df.index.name = "排名"
+            st.dataframe(_style_kill_df(display_df), width="stretch")
+        else:
+            st.info("暂无数据")
 
-        st.dataframe(display_df, width="stretch")
-    else:
-        st.info("暂无数据")
+    with col_k2:
+        st.subheader("🏆 击杀排行（按 ISK）")
+        if "top_killers_by_isk" in dfs:
+            df = dfs["top_killers_by_isk"].copy()
+            df["isk_m"] = (df["total_isk"] / 1_000_000).astype(int)
+            display_df = df[
+                ["character_name", "corporation_name", "kills", "isk_m"]
+            ]
+            display_df.columns = ["角色名", "军团", "击杀次数", "总 ISK (M)"]
+            display_df.index = range(1, len(display_df) + 1)
+            display_df.index.name = "排名"
+            st.dataframe(_style_kill_df(display_df), width="stretch")
+        else:
+            st.info("暂无数据")
+
+    # ── 第四行：被杀排行（按数量 | 按 ISK）─────────────
+
+    col_l1, col_l2 = st.columns(2)
+
+    with col_l1:
+        st.subheader("🎯 被杀排行（按数量）")
+        if "top_victims" in dfs:
+            df = dfs["top_victims"].copy()
+            df["isk_m"] = (df["total_isk"] / 1_000_000).astype(int)
+            display_df = df[
+                ["victim_character_name", "victim_corporation_name", "count", "isk_m"]
+            ]
+            display_df.columns = ["角色名", "军团", "被击杀次数", "总 ISK (M)"]
+            display_df.index = range(1, len(display_df) + 1)
+            display_df.index.name = "排名"
+            st.dataframe(_style_loss_df(display_df), width="stretch")
+        else:
+            st.info("暂无数据")
+
+    with col_l2:
+        st.subheader("🎯 被杀排行（按 ISK）")
+        if "top_victims_by_isk" in dfs:
+            df = dfs["top_victims_by_isk"].copy()
+            df["isk_m"] = (df["total_isk"] / 1_000_000).astype(int)
+            display_df = df[
+                ["victim_character_name", "victim_corporation_name", "count", "isk_m"]
+            ]
+            display_df.columns = ["角色名", "军团", "被击杀次数", "总 ISK (M)"]
+            display_df.index = range(1, len(display_df) + 1)
+            display_df.index.name = "排名"
+            st.dataframe(_style_loss_df(display_df), width="stretch")
+        else:
+            st.info("暂无数据")
 
 
 else:

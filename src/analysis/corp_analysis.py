@@ -59,11 +59,13 @@ class CorpDailyAnalysis:
 
         self.stats = {}
         self.top_killers = []
+        self.top_killers_by_isk = []
         self.top_kill_ships = []
         self.top_loss_ships = []
         self.top_kill_ships_by_isk = []
         self.top_loss_ships_by_isk = []
         self.top_victims = []
+        self.top_victims_by_isk = []
         self.hourly_timeline = []
         self.daily_timeline = []
         self.system_hotspots = []
@@ -103,11 +105,13 @@ class CorpDailyAnalysis:
         self.ally_count = repo.query_ally_count(eid, self.date_from, self.date_to, entity_type=etype)
 
         self.top_killers = repo.query_top_killers(eid, self.date_from, self.date_to, entity_type=etype)
+        self.top_killers_by_isk = repo.query_top_killers_by_isk(eid, self.date_from, self.date_to, entity_type=etype)
         self.top_kill_ships = repo.query_top_kill_ships(eid, self.date_from, self.date_to, limit=10, entity_type=etype)
         self.top_loss_ships = repo.query_top_loss_ships(eid, self.date_from, self.date_to, limit=10, entity_type=etype)
         self.top_kill_ships_by_isk = repo.query_top_kill_ships(eid, self.date_from, self.date_to, limit=10, entity_type=etype, sort_by="isk")
         self.top_loss_ships_by_isk = repo.query_top_loss_ships(eid, self.date_from, self.date_to, limit=10, entity_type=etype, sort_by="isk")
         self.top_victims = repo.query_top_victims(eid, self.date_from, self.date_to, entity_type=etype)
+        self.top_victims_by_isk = repo.query_top_victims_by_isk(eid, self.date_from, self.date_to, entity_type=etype)
         self.hourly_timeline = repo.query_hourly_timeline(eid, self.date_from, self.date_to, entity_type=etype)
         self.daily_timeline = repo.query_daily_timeline(eid, self.date_from, self.date_to, entity_type=etype)
         self.system_hotspots = repo.query_system_hotspots(eid, self.date_from, self.date_to, entity_type=etype)
@@ -124,6 +128,9 @@ class CorpDailyAnalysis:
         if self.top_killers:
             dfs["top_killers"] = pd.DataFrame(self.top_killers)
 
+        if self.top_killers_by_isk:
+            dfs["top_killers_by_isk"] = pd.DataFrame(self.top_killers_by_isk)
+
         if self.top_kill_ships:
             dfs["top_kill_ships"] = pd.DataFrame(self.top_kill_ships)
 
@@ -138,6 +145,9 @@ class CorpDailyAnalysis:
 
         if self.top_victims:
             dfs["top_victims"] = pd.DataFrame(self.top_victims)
+
+        if self.top_victims_by_isk:
+            dfs["top_victims_by_isk"] = pd.DataFrame(self.top_victims_by_isk)
 
         if self.hourly_timeline:
             df = pd.DataFrame(self.hourly_timeline)

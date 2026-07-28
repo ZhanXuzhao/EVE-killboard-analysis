@@ -225,6 +225,33 @@ def query_top_killers(entity_id: int, date_from: str, date_to: str, limit: int =
         return [dict(r) for r in rows]
 
 
+def query_top_killers_by_isk(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
+    """击杀排行（按 ISK）— 本方成员击杀 ISK 排行。"""
+    id_col = _id_col(entity_type)
+    with get_db_read() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT a.character_id,
+                   COALESCE(NULLIF(a.character_name, ''), 'Unknown') AS character_name,
+                   a.corporation_name, a.alliance_name,
+                   a.ship_name,
+                   COUNT(DISTINCT a.killmail_id) AS kills,
+                   COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
+            FROM attackers a
+            JOIN killmails k ON k.killmail_id = a.killmail_id
+            WHERE a.{id_col} = ?
+              AND k.killmail_time >= ? AND k.killmail_time < ?
+              AND a.final_blow = 1
+              AND k.npc_kill = 0
+            GROUP BY a.character_id
+            ORDER BY total_isk DESC
+            LIMIT ?
+            """,
+            (entity_id, date_from, date_to, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def query_top_loss_ships(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation", sort_by: str = "count") -> list[dict]:
     """被击毁舰船排行 — 本方损失最多的船型。
 
@@ -482,6 +509,30 @@ def query_top_victims(entity_id: int, date_from: str, date_to: str, limit: int =
               AND k.npc_kill = 0
             GROUP BY k.victim_character_id
             ORDER BY count DESC
+            LIMIT ?
+            """,
+            (date_from, date_to, entity_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def query_top_victims_by_isk(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
+    """受害者排行（按 ISK）— 本方成员中被击杀 ISK 最多的角色。"""
+    victim_col = _victim_col(entity_type)
+    with get_db_read() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT k.victim_character_id,
+                   COALESCE(NULLIF(k.victim_character_name, ''), 'Unknown') AS victim_character_name,
+                   k.victim_corporation_name, k.victim_alliance_name,
+                   COUNT(*) AS count,
+                   COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
+            FROM killmails k
+            WHERE k.killmail_time >= ? AND k.killmail_time < ?
+              AND k.{victim_col} = ?
+              AND k.npc_kill = 0
+            GROUP BY k.victim_character_id
+            ORDER BY total_isk DESC
             LIMIT ?
             """,
             (date_from, date_to, entity_id, limit),

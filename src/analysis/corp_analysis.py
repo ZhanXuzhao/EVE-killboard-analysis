@@ -72,7 +72,9 @@ class CorpDailyAnalysis:
         self.top_attacker_alliances = []
         self.joint_kills_alliances = []
         self.joint_kills_participants = []
-        self.active_members = 0
+        self.participant_count = 0
+        self.enemy_count = 0
+        self.ally_count = 0
         self.has_data = False
 
     def run(self):
@@ -92,10 +94,13 @@ class CorpDailyAnalysis:
 
         if etype == "alliance":
             self.stats = repo.query_alliance_daily_stats(eid, self.date_from, self.date_to)
-            self.active_members = repo.query_alliance_active_members(eid, self.date_from, self.date_to)
+            self.participant_count = repo.query_alliance_participant_count(eid, self.date_from, self.date_to)
         else:
             self.stats = repo.query_corp_daily_stats(eid, self.date_from, self.date_to)
-            self.active_members = repo.query_active_members(eid, self.date_from, self.date_to, entity_type=etype)
+            self.participant_count = repo.query_participant_count(eid, self.date_from, self.date_to, entity_type=etype)
+
+        self.enemy_count = repo.query_enemy_count(eid, self.date_from, self.date_to, entity_type=etype)
+        self.ally_count = repo.query_ally_count(eid, self.date_from, self.date_to, entity_type=etype)
 
         self.top_killers = repo.query_top_killers(eid, self.date_from, self.date_to, entity_type=etype)
         self.top_kill_ships = repo.query_top_kill_ships(eid, self.date_from, self.date_to, limit=10, entity_type=etype)

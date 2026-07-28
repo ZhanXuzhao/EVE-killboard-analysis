@@ -733,7 +733,7 @@ if entity_id is not None:
             return f"{v/1e9:.2f}B"
         return f"{v/1e6:.1f}M"
 
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    k1, k2, k3, k4, k5, k6, k7, k8 = st.columns(8)
     with k1:
         st.metric("🎯 击杀", stats["kills"]["count"],
                   help="本方击杀总数（不含 NPC）")
@@ -750,8 +750,14 @@ if entity_id is not None:
         st.metric("📊 ISK 比", f"{kd_ratio}",
                   help="击杀 ISK ÷ 损失 ISK")
     with k6:
-        st.metric("👥 活跃", analysis.active_members,
+        st.metric("👥 参战人数", analysis.participant_count,
                   help="该时段有击杀/损失记录的成员数")
+    with k7:
+        st.metric("⚔️ 敌对人数", analysis.enemy_count,
+                  help="被我们击杀 + 击杀我们的人（去重，不含本方成员）")
+    with k8:
+        st.metric("🤝 友军人数", analysis.ally_count,
+                  help="和我们一起击杀别人的人（不含本方成员）")
 
     # ISK 金额格式化辅助（图表 tooltip 用）
     def fmt_isk(val: float) -> str:

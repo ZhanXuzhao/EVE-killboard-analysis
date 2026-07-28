@@ -379,8 +379,8 @@ def query_system_hotspots(entity_id: int, date_from: str, date_to: str, limit: i
         return [dict(r) for r in rows]
 
 
-def query_active_members(entity_id: int, date_from: str, date_to: str, entity_type: str = "corporation") -> int:
-    """活跃成员数（有击杀或损失记录的成员）。"""
+def query_participant_count(entity_id: int, date_from: str, date_to: str, entity_type: str = "corporation") -> int:
+    """参战人数（有击杀或损失记录的成员）。"""
     id_col = _id_col(entity_type)
     victim_col = _victim_col(entity_type)
     with get_db_read() as conn:
@@ -400,6 +400,64 @@ def query_active_members(entity_id: int, date_from: str, date_to: str, entity_ty
             )
             """,
             (entity_id, date_from, date_to, entity_id, date_from, date_to),
+        ).fetchone()
+        return row["count"] if row else 0
+
+
+def query_enemy_count(entity_id: int, date_from: str, date_to: str, entity_type: str = "corporation") -> int:
+    """敌对人数（被我们击杀的人 + 击杀我们的人，去重，不含本方成员）。"""
+    id_col = _id_col(entity_type)
+    victim_col = _victim_col(entity_type)
+    with get_db_read() as conn:
+        row = conn.execute(
+            f"""
+            SELECT COUNT(DISTINCT cid) AS count FROM (
+                -- 被我们击杀的人（不含本方成员）
+                SELECT k.victim_character_id AS cid
+                FROM killmails k
+                WHERE EXISTS (
+                    SELECT 1 FROM attackers a
+                    WHERE a.killmail_id = k.killmail_id AND a.{id_col} = ?
+                )
+                  AND k.killmail_time >= ? AND k.killmail_time < ?
+                  AND k.npc_kill = 0
+                  AND k.{victim_col} != ?
+
+                UNION
+
+                -- 击杀我们的人（不含本方成员）
+                SELECT a.character_id AS cid
+                FROM attackers a
+                JOIN killmails k ON k.killmail_id = a.killmail_id
+                WHERE k.{victim_col} = ?
+                  AND k.killmail_time >= ? AND k.killmail_time < ?
+                  AND a.{id_col} != ?
+            )
+            """,
+            (entity_id, date_from, date_to, entity_id,
+             entity_id, date_from, date_to, entity_id),
+        ).fetchone()
+        return row["count"] if row else 0
+
+
+def query_ally_count(entity_id: int, date_from: str, date_to: str, entity_type: str = "corporation") -> int:
+    """友军人数（和我们一起击杀别人的人，不含本方成员）。"""
+    id_col = _id_col(entity_type)
+    with get_db_read() as conn:
+        row = conn.execute(
+            f"""
+            SELECT COUNT(DISTINCT a.character_id) AS count
+            FROM attackers a
+            JOIN killmails k ON k.killmail_id = a.killmail_id
+            WHERE EXISTS (
+                SELECT 1 FROM attackers a2
+                WHERE a2.killmail_id = k.killmail_id AND a2.{id_col} = ?
+            )
+              AND a.{id_col} != ?
+              AND k.killmail_time >= ? AND k.killmail_time < ?
+              AND k.npc_kill = 0
+            """,
+            (entity_id, entity_id, date_from, date_to),
         ).fetchone()
         return row["count"] if row else 0
 
@@ -815,8 +873,8 @@ def query_alliance_daily_stats(alliance_id: int, date_from: str, date_to: str) -
         }
 
 
-def query_alliance_active_members(alliance_id: int, date_from: str, date_to: str) -> int:
-    """联盟活跃成员数。"""
+def query_alliance_participant_count(alliance_id: int, date_from: str, date_to: str) -> int:
+    """联盟参战人数。"""
     with get_db_read() as conn:
         row = conn.execute(
             """

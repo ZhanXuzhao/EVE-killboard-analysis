@@ -126,10 +126,11 @@ def init_db():
                 PRIMARY KEY (entity_id, entity_type, date_from, date_to)
             );
 
-            -- ID→名称缓存表
+            -- ID→名称缓存表（含类别）
             CREATE TABLE IF NOT EXISTS id_name_cache (
                 entity_id INTEGER PRIMARY KEY,
-                name      TEXT NOT NULL
+                name      TEXT NOT NULL,
+                category  TEXT
             );
 
             -- 星系→星域缓存表
@@ -162,11 +163,23 @@ def init_db():
             except sqlite3.OperationalError:
                 pass  # 列已存在
 
+        # 兼容旧数据库：id_name_cache 新增 category 列
+        try:
+            conn.execute("ALTER TABLE id_name_cache ADD COLUMN category TEXT")
+        except sqlite3.OperationalError:
+            pass
+
     # 迁移旧 JSON 缓存到数据库
     _migrate_json_cache()
 
     # 从种子文件初始化 type_translations（空表时自动加载）
     _load_type_translations_seed()
+
+    # 从种子文件初始化 system_region_cache（空表时自动加载）
+    _load_system_region_seed()
+
+    # 从种子文件初始化 id_name_cache（空表时自动加载）
+    _load_id_name_cache_seed()
 
 
 def _load_type_translations_seed():
@@ -196,6 +209,63 @@ def _load_type_translations_seed():
         logger.info(f"   ✅ 加载 {len(rows)} 条翻译数据")
     except Exception as e:
         logger.warning(f"加载翻译种子文件失败: {e}")
+
+
+def _load_system_region_seed():
+    """如果 system_region_cache 为空，从种子 JSON 文件初始化（星系→星域映射及安全等级）。"""
+    seed_path = DATA_DIR / "system_region_seed.json"
+    if not seed_path.exists():
+        return
+    try:
+        with get_db_read() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM system_region_cache").fetchone()[0]
+        if count > 0:
+            return  # 已有数据，跳过
+        logger.info("📦 从种子文件初始化 system_region_cache ...")
+        with open(seed_path, encoding="utf-8") as f:
+            data = json.load(f)
+        rows = []
+        for sid, vals in data.items():
+            region_name = vals["region_name"] if isinstance(vals, dict) else vals
+            security_status = vals.get("security_status") if isinstance(vals, dict) else None
+            rows.append((int(sid), region_name, security_status))
+        with get_db_write() as conn:
+            conn.executemany(
+                "INSERT OR IGNORE INTO system_region_cache (system_id, region_name, security_status) VALUES (?, ?, ?)",
+                rows,
+            )
+        logger.info(f"   ✅ 加载 {len(rows)} 条星系星域数据")
+    except Exception as e:
+        logger.warning(f"加载星系星域种子文件失败: {e}")
+
+
+def _load_id_name_cache_seed():
+    """如果 id_name_cache 为空，从种子 JSON 文件初始化（ID→名称映射）。"""
+    seed_path = DATA_DIR / "id_name_seed.json"
+    if not seed_path.exists():
+        return
+    try:
+        with get_db_read() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM id_name_cache").fetchone()[0]
+        if count > 0:
+            return  # 已有数据，跳过
+        logger.info("📦 从种子文件初始化 id_name_cache ...")
+        with open(seed_path, encoding="utf-8") as f:
+            data = json.load(f)
+        rows = []
+        for eid, vals in data.items():
+            if isinstance(vals, dict):
+                rows.append((int(eid), vals["name"], vals.get("category")))
+            else:
+                rows.append((int(eid), vals, None))
+        with get_db_write() as conn:
+            conn.executemany(
+                "INSERT OR IGNORE INTO id_name_cache (entity_id, name, category) VALUES (?, ?, ?)",
+                rows,
+            )
+        logger.info(f"   ✅ 加载 {len(rows)} 条 ID 名称数据")
+    except Exception as e:
+        logger.warning(f"加载 ID 名称种子文件失败: {e}")
 
 
 def _migrate_json_cache():
@@ -284,7 +354,7 @@ def batch_get_id_names(entity_ids: list[int]) -> dict[int, str]:
 
 
 def batch_set_id_names(name_map: dict[int, str]):
-    """批量写入 ID→名称到缓存。"""
+    """批量写入 ID→名称到缓存（兼容旧调用，category 留 NULL）。"""
     if not name_map:
         return
     with get_db_write() as conn:
@@ -292,6 +362,45 @@ def batch_set_id_names(name_map: dict[int, str]):
             "INSERT OR REPLACE INTO id_name_cache (entity_id, name) VALUES (?, ?)",
             list(name_map.items()),
         )
+
+
+def batch_upsert_id_names(name_map: dict[int, tuple[str, str]]):
+    """批量写入 ID→(名称, 类别) 到缓存。
+
+    Args:
+        name_map: {entity_id: (name, category)}
+    """
+    if not name_map:
+        return
+    with get_db_write() as conn:
+        conn.executemany(
+            "INSERT OR REPLACE INTO id_name_cache (entity_id, name, category) VALUES (?, ?, ?)",
+            [(eid, name, cat) for eid, (name, cat) in name_map.items()],
+        )
+
+
+def batch_fill_category(category_map: dict[int, str]):
+    """增量更新已有记录的 category（仅更新 category 为 NULL 的记录）。"""
+    if not category_map:
+        return
+    with get_db_write() as conn:
+        conn.executemany(
+            "UPDATE id_name_cache SET category = ? WHERE entity_id = ? AND category IS NULL",
+            [(cat, eid) for eid, cat in category_map.items()],
+        )
+
+
+def batch_get_ids_missing_category(entity_ids: list[int]) -> list[int]:
+    """返回缓存中 category 为 NULL 的 ID 子集。"""
+    if not entity_ids:
+        return []
+    placeholders = ",".join("?" * len(entity_ids))
+    with get_db_read() as conn:
+        rows = conn.execute(
+            f"SELECT entity_id FROM id_name_cache WHERE entity_id IN ({placeholders}) AND category IS NULL",
+            entity_ids,
+        ).fetchall()
+        return [r["entity_id"] for r in rows]
 
 
 # ── 星系→星域 缓存操作 ──────────────────────────────────

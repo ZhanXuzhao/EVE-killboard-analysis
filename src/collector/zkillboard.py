@@ -13,9 +13,12 @@ from src.config import (
 )
 from src.storage.database import (
     batch_get_id_names,
+    batch_get_ids_missing_category,
     batch_get_system_data,
     batch_get_system_regions,
     batch_set_id_names,
+    batch_upsert_id_names,
+    batch_fill_category,
     set_system_region,
 )
 
@@ -66,6 +69,36 @@ def _batch_resolve_ids(id_batch: list[int]) -> dict[int, str]:
         data = resp.json()
         if isinstance(data, list):
             return {item["id"]: item["name"] for item in data if "name" in item}
+    except Exception as e:
+        logger.warning(f"ESI 名称解析失败 (batch size={len(id_batch)}): {e}")
+    return {}
+
+
+def _batch_resolve_ids_with_category(id_batch: list[int]) -> dict[int, tuple[str, str]]:
+    """批量调用 ESI /universe/names/ 解析 ID→(名称, 类别)。
+
+    Args:
+        id_batch: 最多 1000 个 ID
+
+    Returns:
+        {id: (name, category), ...}
+        category 取值: character, corporation, alliance, solar_system, inventory_type, region, station, faction, constellation
+    """
+    if not id_batch:
+        return {}
+    try:
+        resp = _session.post(
+            _ESI_NAMES_URL,
+            json=id_batch,
+            timeout=REQUEST_TIMEOUT,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if isinstance(data, list):
+            return {
+                item["id"]: (item["name"], item.get("category", ""))
+                for item in data if "name" in item
+            }
     except Exception as e:
         logger.warning(f"ESI 名称解析失败 (batch size={len(id_batch)}): {e}")
     return {}
@@ -230,20 +263,38 @@ def _enrich_killmail_names(kills: list[dict]) -> list[dict]:
     id_list = sorted(all_ids)
     name_map: dict[int, str] = batch_get_id_names(id_list)
 
-    # 找出未缓存的 ID，调用 ESI 批量解析
+    # 找出未缓存的 ID，调用 ESI 批量解析（含 category）
     uncached = [i for i in id_list if i not in name_map]
     if uncached:
-        new_names: dict[int, str] = {}
+        new_data: dict[int, tuple[str, str]] = {}
         for i in range(0, len(uncached), 1000):
             batch = uncached[i:i + 1000]
-            new_names.update(_batch_resolve_ids(batch))
-        if new_names:
-            # 立即写入 SQLite（其他并发读立即可见新缓存）
+            new_data.update(_batch_resolve_ids_with_category(batch))
+        if new_data:
+            # 立即写入 SQLite（含 category）
             try:
-                batch_set_id_names(new_names)
+                batch_upsert_id_names(new_data)
             except Exception as e:
                 logger.warning(f"写入 ID 名称缓存失败: {e}")
-            name_map.update(new_names)
+            name_map.update({k: v[0] for k, v in new_data.items()})
+
+    # 对已有记录增量补 category（仅补数据库中 category 为 NULL 的记录）
+    existing_ids = [i for i in id_list if i in name_map]
+    if existing_ids:
+        missing_cat_ids = batch_get_ids_missing_category(existing_ids)
+        if missing_cat_ids:
+            for i in range(0, len(missing_cat_ids), 1000):
+                batch = missing_cat_ids[i:i + 1000]
+                try:
+                    resolved = _batch_resolve_ids_with_category(batch)
+                    cat_map = {eid: cat for eid, (_, cat) in resolved.items() if cat}
+                    if cat_map:
+                        try:
+                            batch_fill_category(cat_map)
+                        except Exception as e:
+                            logger.warning(f"增量更新 category 失败: {e}")
+                except Exception:
+                    pass  # 非关键操作，跳过即可
 
     # 注入名称
     for km in kills:

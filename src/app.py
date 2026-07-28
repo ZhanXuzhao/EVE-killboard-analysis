@@ -848,12 +848,14 @@ if entity_id is not None:
     else:
         st.info("暂无时间分布数据")
 
-    # ── Row 2: 星域 + 星系 ─────────────────────────────
+    # ── Row 2: 星域（击杀 | 损失）─────────────────────
 
-    col1, col2 = st.columns(2)
+    # ── Row 2: 星域（击杀 | 损失）─────────────────────
 
-    with col1:
-        st.subheader("🌍 星域")
+    col_rk, col_rl = st.columns(2)
+
+    with col_rk:
+        st.subheader("🌍 星域（击杀）")
         if "region_hotspots" in dfs:
             df = dfs["region_hotspots"].copy()
             df = _apply_zh_region_names(df, "solar_system_region_name")
@@ -865,7 +867,7 @@ if entity_id is not None:
                 orientation="h",
                 labels={"kills": "击杀数", "solar_system_region_name": "星域"},
                 color="total_isk",
-                color_continuous_scale="Reds",
+                color_continuous_scale="Greens",
                 text="kills",
                 hover_data={"solar_system_region_name_bil": False,
                             "total_isk": False, "isk_label": False},
@@ -881,17 +883,52 @@ if entity_id is not None:
                 textposition="outside",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-
             _render_chart_with_copy(fig, _chart_df["solar_system_region_name_bil"].tolist(), "_show_region_text", "◀")
         else:
-            st.info("暂无星域数据")
+            st.info("暂无星域击杀数据")
 
-    with col2:
-        st.subheader("🗺️ 星系")
+    with col_rl:
+        st.subheader("🌍 星域（损失）")
+        if "region_losses" in dfs:
+            df = dfs["region_losses"].copy()
+            df = _apply_zh_region_names(df, "solar_system_region_name")
+            df["isk_label"] = df["total_isk"].apply(_fmt)
+            fig = px.bar(
+                df.head(10).iloc[::-1],
+                x="losses",
+                y="solar_system_region_name",
+                orientation="h",
+                labels={"losses": "损失数", "solar_system_region_name": "星域"},
+                color="total_isk",
+                color_continuous_scale="Reds",
+                text="losses",
+                hover_data={"solar_system_region_name_bil": False,
+                            "total_isk": False, "isk_label": False},
+            )
+            _chart_df = df.head(10).iloc[::-1]
+            fig.update_traces(
+                hovertemplate=(
+                    "<b>%{customdata[1]}</b><br>"
+                    "损失: %{x}<br>"
+                    "ISK: %{customdata[0]}<extra></extra>"
+                ),
+                customdata=_chart_df[["isk_label", "solar_system_region_name_bil"]].values,
+                textposition="outside",
+            )
+            fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
+            _render_chart_with_copy(fig, _chart_df["solar_system_region_name_bil"].tolist(), "_show_region_loss_text", "◀")
+        else:
+            st.info("暂无星域损失数据")
+
+    # ── Row 3: 星系（击杀 | 损失）─────────────────────
+
+    col_sk, col_sl = st.columns(2)
+
+    with col_sk:
+        st.subheader("🗺️ 星系（击杀）")
         if "system_hotspots" in dfs:
             df = dfs["system_hotspots"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
-            # 补充所在星域名（中英双语）
             try:
                 from src.storage.database import get_db_read
                 sys_ids = df["solar_system_id"].dropna().unique().tolist()
@@ -903,7 +940,6 @@ if entity_id is not None:
                             sys_ids,
                         ).fetchall()
                         region_map = {r["system_id"]: r["region_name"] for r in rows}
-                        # 在同一连接内查询中文星域名
                         en_names = [v for v in region_map.values() if v]
                         zh_map = {}
                         if en_names:
@@ -924,7 +960,6 @@ if entity_id is not None:
             except Exception:
                 df["region_name"] = ""
                 df["region_name_bil"] = ""
-            # 按需回填缺失的安全等级
             missing_sec = df[df["security_status"].isna()]["solar_system_id"].dropna().unique().tolist()
             if missing_sec:
                 import requests as _req
@@ -962,7 +997,7 @@ if entity_id is not None:
                 orientation="h",
                 labels={"kills": "击杀数", "display": "星系"},
                 color="total_isk",
-                color_continuous_scale="Reds",
+                color_continuous_scale="Greens",
                 text="kills",
                 hover_data={"total_isk": False, "isk_label": False, "region_name": False},
             )
@@ -979,7 +1014,78 @@ if entity_id is not None:
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
             _render_chart_with_copy(fig, _chart_df["solar_system_name"].tolist(), "_show_system", "◀")
         else:
-            st.info("暂无星系数据")
+            st.info("暂无星系击杀数据")
+
+    with col_sl:
+        st.subheader("🗺️ 星系（损失）")
+        if "system_losses" in dfs:
+            df = dfs["system_losses"].copy()
+            df["isk_label"] = df["total_isk"].apply(_fmt)
+            try:
+                from src.storage.database import get_db_read
+                sys_ids = df["solar_system_id"].dropna().unique().tolist()
+                if sys_ids:
+                    ph = ",".join("?" * len(sys_ids))
+                    with get_db_read() as conn:
+                        rows = conn.execute(
+                            f"SELECT system_id, region_name FROM system_region_cache WHERE system_id IN ({ph})",
+                            sys_ids,
+                        ).fetchall()
+                        region_map = {r["system_id"]: r["region_name"] for r in rows}
+                        en_names = [v for v in region_map.values() if v]
+                        zh_map = {}
+                        if en_names:
+                            en_ph = ",".join("?" * len(en_names))
+                            zh_rows = conn.execute(
+                                f"SELECT name_en, name_zh FROM type_translations WHERE name_en IN ({en_ph})",
+                                en_names,
+                            ).fetchall()
+                            zh_map = {r["name_en"]: r["name_zh"] for r in zh_rows}
+                    df["region_name"] = df["solar_system_id"].map(
+                        lambda x: region_map.get(x, "") if pd.notna(x) else ""
+                    )
+                    df["region_name_bil"] = df["region_name"].map(
+                        lambda x: f"{zh_map.get(x, x)} {x}" if x and zh_map.get(x) else x
+                    )
+                else:
+                    df["region_name_bil"] = df.get("region_name", "")
+            except Exception:
+                df["region_name"] = ""
+                df["region_name_bil"] = ""
+            df["display"] = df.apply(
+                lambda r: (
+                    f"{r['solar_system_name']} [{r['security_status']:.1f}]"
+                    if pd.notna(r.get("security_status"))
+                    else r['solar_system_name']
+                ),
+                axis=1,
+            )
+            _chart_df = df.head(10).iloc[::-1]
+            fig = px.bar(
+                _chart_df,
+                x="losses",
+                y="display",
+                orientation="h",
+                labels={"losses": "损失数", "display": "星系"},
+                color="total_isk",
+                color_continuous_scale="Reds",
+                text="losses",
+                hover_data={"total_isk": False, "isk_label": False, "region_name": False},
+            )
+            fig.update_traces(
+                hovertemplate=(
+                    "<b>%{y}</b><br>"
+                    "损失: %{x}<br>"
+                    "ISK: %{customdata[0]}<br>"
+                    "星域: %{customdata[1]}<extra></extra>"
+                ),
+                customdata=_chart_df[["isk_label", "region_name_bil"]].values,
+                textposition="outside",
+            )
+            fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
+            _render_chart_with_copy(fig, _chart_df["solar_system_name"].tolist(), "_show_system_loss", "◀")
+        else:
+            st.info("暂无星系损失数据")
 
     # ── Row 3: 联盟排行 ───────────────────────────────
 
@@ -1001,7 +1107,7 @@ if entity_id is not None:
                 orientation="h",
                 labels={"kills": "击杀数", "display": "联盟"},
                 color="total_isk",
-                color_continuous_scale="Reds",
+                color_continuous_scale="Greens",
                 text="kills",
                 hover_data={"total_isk": False, "isk_label": True},
             )
@@ -1127,7 +1233,7 @@ if entity_id is not None:
                 orientation="h",
                 labels={"count": "击杀数", "display": "舰船"},
                 color="total_isk",
-                color_continuous_scale="Reds",
+                color_continuous_scale="Greens",
                 text="count",
                 hover_data={"total_isk": False, "isk_label": False},
             )
@@ -1162,7 +1268,7 @@ if entity_id is not None:
                 orientation="h",
                 labels={"total_isk": "总 ISK", "display_isk": "舰船"},
                 color="count",
-                color_continuous_scale="Reds",
+                color_continuous_scale="Greens",
                 text="isk_label",
                 hover_data={"total_isk": False, "count": False},
             )

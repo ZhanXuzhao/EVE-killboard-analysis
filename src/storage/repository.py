@@ -409,6 +409,30 @@ def query_system_hotspots(entity_id: int, date_from: str, date_to: str, limit: i
         return [dict(r) for r in rows]
 
 
+def query_system_losses(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
+    """星系损失 — 本方成员被击杀最多的星系。"""
+    victim_col = _victim_col(entity_type)
+    with get_db_read() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT k.solar_system_id, k.solar_system_name,
+                   COUNT(DISTINCT k.killmail_id) AS losses,
+                   COALESCE(SUM(k.isk_destroyed), 0) AS total_isk,
+                   src.security_status
+            FROM killmails k
+            LEFT JOIN system_region_cache src ON src.system_id = k.solar_system_id
+            WHERE k.killmail_time >= ? AND k.killmail_time < ?
+              AND k.{victim_col} = ?
+              AND k.npc_kill = 0
+            GROUP BY k.solar_system_id
+            ORDER BY losses DESC
+            LIMIT ?
+            """,
+            (date_from, date_to, entity_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def query_participant_count(entity_id: int, date_from: str, date_to: str, entity_type: str = "corporation") -> int:
     """参战人数（有击杀或损失记录的成员）。"""
     id_col = _id_col(entity_type)
@@ -559,6 +583,29 @@ def query_region_hotspots(entity_id: int, date_from: str, date_to: str, limit: i
               AND k.solar_system_region_name IS NOT NULL
             GROUP BY k.solar_system_region_name
             ORDER BY kills DESC
+            LIMIT ?
+            """,
+            (date_from, date_to, entity_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def query_region_losses(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
+    """星域损失 — 本方成员被击杀最多的星域。"""
+    victim_col = _victim_col(entity_type)
+    with get_db_read() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT k.solar_system_region_name,
+                   COUNT(DISTINCT k.killmail_id) AS losses,
+                   COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
+            FROM killmails k
+            WHERE k.killmail_time >= ? AND k.killmail_time < ?
+              AND k.{victim_col} = ?
+              AND k.npc_kill = 0
+              AND k.solar_system_region_name IS NOT NULL
+            GROUP BY k.solar_system_region_name
+            ORDER BY losses DESC
             LIMIT ?
             """,
             (date_from, date_to, entity_id, limit),

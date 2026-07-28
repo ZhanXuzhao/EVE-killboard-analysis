@@ -66,6 +66,8 @@ class CorpDailyAnalysis:
         self.top_loss_ships_by_isk = []
         self.top_victims = []
         self.top_victims_by_isk = []
+        self.region_losses = []
+        self.system_losses = []
         self.hourly_timeline = []
         self.daily_timeline = []
         self.system_hotspots = []
@@ -115,7 +117,9 @@ class CorpDailyAnalysis:
         self.hourly_timeline = repo.query_hourly_timeline(eid, self.date_from, self.date_to, entity_type=etype)
         self.daily_timeline = repo.query_daily_timeline(eid, self.date_from, self.date_to, entity_type=etype)
         self.system_hotspots = repo.query_system_hotspots(eid, self.date_from, self.date_to, entity_type=etype)
+        self.system_losses = repo.query_system_losses(eid, self.date_from, self.date_to, entity_type=etype)
         self.region_hotspots = repo.query_region_hotspots(eid, self.date_from, self.date_to, entity_type=etype)
+        self.region_losses = repo.query_region_losses(eid, self.date_from, self.date_to, entity_type=etype)
         self.top_killed_alliances = repo.query_top_killed_alliances(eid, self.date_from, self.date_to, entity_type=etype)
         self.top_attacker_alliances = repo.query_top_attacker_alliances(eid, self.date_from, self.date_to, entity_type=etype)
         self.joint_kills_alliances = repo.query_joint_kills_alliances(eid, self.date_from, self.date_to, entity_type=etype)
@@ -164,8 +168,14 @@ class CorpDailyAnalysis:
         if self.system_hotspots:
             dfs["system_hotspots"] = pd.DataFrame(self.system_hotspots)
 
+        if self.system_losses:
+            dfs["system_losses"] = pd.DataFrame(self.system_losses)
+
         if self.region_hotspots:
             dfs["region_hotspots"] = pd.DataFrame(self.region_hotspots)
+
+        if self.region_losses:
+            dfs["region_losses"] = pd.DataFrame(self.region_losses)
 
         if self.top_killed_alliances:
             dfs["top_killed_alliances"] = pd.DataFrame(self.top_killed_alliances)

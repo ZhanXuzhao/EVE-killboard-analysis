@@ -1258,9 +1258,11 @@ if entity_id is not None:
     if "top_killers" in dfs:
         df = dfs["top_killers"].copy()
         # ISK 转为百万单位（保留数值，可排序）
-        df["isk_m"] = (df["total_isk"] / 1_000_000).round(1)
-        display_df = df[["character_name", "ship_name", "kills", "isk_m"]]
-        display_df.columns = ["角色名", "主要舰船", "击杀数", "总 ISK (M)"]
+        df["isk_m"] = (df["total_isk"] / 1_000_000).astype(int)
+        display_df = df[
+            ["character_name", "corporation_name", "alliance_name", "kills", "isk_m"]
+        ]
+        display_df.columns = ["角色名", "军团", "联盟", "击杀次数", "总 ISK (M)"]
 
         display_df.index = range(1, len(display_df) + 1)
         display_df.index.name = "排名"
@@ -1274,11 +1276,11 @@ if entity_id is not None:
     st.subheader("🎯 被杀排行")
     if "top_victims" in dfs:
         df = dfs["top_victims"].copy()
-        df["isk_m"] = (df["total_isk"] / 1_000_000).round(1)
+        df["isk_m"] = (df["total_isk"] / 1_000_000).astype(int)
         display_df = df[
-            ["victim_character_name", "victim_corporation_name", "count", "isk_m"]
+            ["victim_character_name", "victim_corporation_name", "victim_alliance_name", "count", "isk_m"]
         ]
-        display_df.columns = ["角色名", "军团", "被击杀次数", "总 ISK (M)"]
+        display_df.columns = ["角色名", "军团", "联盟", "被击杀次数", "总 ISK (M)"]
         display_df.index = range(1, len(display_df) + 1)
         display_df.index.name = "排名"
 

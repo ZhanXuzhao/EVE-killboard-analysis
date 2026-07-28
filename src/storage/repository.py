@@ -206,6 +206,7 @@ def query_top_killers(entity_id: int, date_from: str, date_to: str, limit: int =
             f"""
             SELECT a.character_id,
                    COALESCE(NULLIF(a.character_name, ''), 'Unknown') AS character_name,
+                   a.corporation_name, a.alliance_name,
                    a.ship_name,
                    COUNT(DISTINCT a.killmail_id) AS kills,
                    COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
@@ -465,8 +466,8 @@ def query_ally_count(entity_id: int, date_from: str, date_to: str, entity_type: 
 
 
 def query_top_victims(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation") -> list[dict]:
-    """受害者排行 — 被本方击杀最多的角色。"""
-    id_col = _id_col(entity_type)
+    """受害者排行 — 本方成员中被击杀最多的角色。"""
+    victim_col = _victim_col(entity_type)
     with get_db_read() as conn:
         rows = conn.execute(
             f"""
@@ -477,10 +478,7 @@ def query_top_victims(entity_id: int, date_from: str, date_to: str, limit: int =
                    COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
             FROM killmails k
             WHERE k.killmail_time >= ? AND k.killmail_time < ?
-              AND EXISTS (
-                  SELECT 1 FROM attackers a
-                  WHERE a.killmail_id = k.killmail_id AND a.{id_col} = ?
-              )
+              AND k.{victim_col} = ?
               AND k.npc_kill = 0
             GROUP BY k.victim_character_id
             ORDER BY count DESC

@@ -1378,7 +1378,7 @@ if entity_id is not None:
     col_k1, col_k2 = st.columns(2)
 
     with col_k1:
-        st.subheader("🏆 击杀排行（按数量）")
+        st.subheader("🏆 击杀排行（数量）")
         if "top_killers" in dfs:
             df = dfs["top_killers"].copy()
             df["isk_m"] = (df["total_isk"] / 1_000_000).astype(int)
@@ -1393,7 +1393,7 @@ if entity_id is not None:
             st.info("暂无数据")
 
     with col_k2:
-        st.subheader("🏆 击杀排行（按 ISK）")
+        st.subheader("🏆 击杀排行（ISK）")
         if "top_killers_by_isk" in dfs:
             df = dfs["top_killers_by_isk"].copy()
             df["isk_m"] = (df["total_isk"] / 1_000_000).astype(int)
@@ -1412,7 +1412,7 @@ if entity_id is not None:
     col_l1, col_l2 = st.columns(2)
 
     with col_l1:
-        st.subheader("🎯 被杀排行（按数量）")
+        st.subheader("🎯 被杀排行（数量）")
         if "top_victims" in dfs:
             df = dfs["top_victims"].copy()
             df["isk_m"] = (df["total_isk"] / 1_000_000).astype(int)
@@ -1427,7 +1427,7 @@ if entity_id is not None:
             st.info("暂无数据")
 
     with col_l2:
-        st.subheader("🎯 被杀排行（按 ISK）")
+        st.subheader("🎯 被杀排行（ISK）")
         if "top_victims_by_isk" in dfs:
             df = dfs["top_victims_by_isk"].copy()
             df["isk_m"] = (df["total_isk"] / 1_000_000).astype(int)

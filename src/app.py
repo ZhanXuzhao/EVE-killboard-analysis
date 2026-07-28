@@ -401,7 +401,7 @@ def _apply_zh_region_names(df, name_col: str):
         zh_map = {r["name_en"]: r["name_zh"] for r in rows}
         if zh_map:
             df[bil_col] = df[name_col].map(
-                lambda x: f"{zh_map[x]} ({x})" if x in zh_map else x
+                lambda x: f"{zh_map[x]} {x}" if x in zh_map else x
             )
             df[name_col] = df[name_col].map(
                 lambda x: zh_map.get(x, x)
@@ -891,7 +891,7 @@ if entity_id is not None:
         if "system_hotspots" in dfs:
             df = dfs["system_hotspots"].copy()
             df["isk_label"] = df["total_isk"].apply(_fmt)
-            # 补充所在星域名
+            # 补充所在星域名（中英双语）
             try:
                 from src.storage.database import get_db_read
                 sys_ids = df["solar_system_id"].dropna().unique().tolist()
@@ -902,12 +902,28 @@ if entity_id is not None:
                             f"SELECT system_id, region_name FROM system_region_cache WHERE system_id IN ({ph})",
                             sys_ids,
                         ).fetchall()
-                    region_map = {r["system_id"]: r["region_name"] for r in rows}
+                        region_map = {r["system_id"]: r["region_name"] for r in rows}
+                        # 在同一连接内查询中文星域名
+                        en_names = [v for v in region_map.values() if v]
+                        zh_map = {}
+                        if en_names:
+                            en_ph = ",".join("?" * len(en_names))
+                            zh_rows = conn.execute(
+                                f"SELECT name_en, name_zh FROM type_translations WHERE name_en IN ({en_ph})",
+                                en_names,
+                            ).fetchall()
+                            zh_map = {r["name_en"]: r["name_zh"] for r in zh_rows}
                     df["region_name"] = df["solar_system_id"].map(
                         lambda x: region_map.get(x, "") if pd.notna(x) else ""
                     )
+                    df["region_name_bil"] = df["region_name"].map(
+                        lambda x: f"{zh_map.get(x, x)} {x}" if x and zh_map.get(x) else x
+                    )
+                else:
+                    df["region_name_bil"] = df.get("region_name", "")
             except Exception:
                 df["region_name"] = ""
+                df["region_name_bil"] = ""
             df["display"] = df.apply(
                 lambda r: f"{r['solar_system_name']} ({r['kills']})",
                 axis=1,
@@ -931,7 +947,7 @@ if entity_id is not None:
                     "ISK: %{customdata[0]}<br>"
                     "星域: %{customdata[1]}<extra></extra>"
                 ),
-                customdata=_chart_df[["isk_label", "region_name"]].values,
+                customdata=_chart_df[["isk_label", "region_name_bil"]].values,
                 textposition="outside",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))

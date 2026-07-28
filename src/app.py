@@ -738,11 +738,11 @@ if entity_id is not None:
         st.metric("🎯 击杀", stats["kills"]["count"],
                   help="本方击杀总数（不含 NPC）")
     with k2:
-        st.metric("💰 击杀 ISK", _fmt(isk_killed),
-                  help="击杀总价值")
-    with k3:
         st.metric("💀 损失", stats["losses"]["count"],
                   help="本方被击杀总数")
+    with k3:
+        st.metric("💰 击杀 ISK", _fmt(isk_killed),
+                  help="击杀总价值")
     with k4:
         st.metric("💸 损失 ISK", _fmt(isk_lost),
                   help="损失总价值")

@@ -1220,10 +1220,10 @@ if entity_id is not None:
         st.subheader("🚢 击杀舰船（数量）")
         if "top_kill_ships" in dfs:
             df = dfs["top_kill_ships"].copy()
-            df = _apply_zh_ship_names(df, "ship_type_id", "ship_name")
+            df = _apply_zh_ship_names(df, "victim_ship_type_id", "victim_ship_name")
             df["isk_label"] = df["total_isk"].apply(_fmt)
             df["display"] = df.apply(
-                lambda r: f"{r['ship_name']} ({r['count']})", axis=1
+                lambda r: f"{r['victim_ship_name']} ({r['count']})", axis=1
             )
             _chart_df = df.head(10).iloc[::-1]
             fig = px.bar(
@@ -1243,11 +1243,11 @@ if entity_id is not None:
                     "击杀: %{x}<br>"
                     "ISK: %{customdata[0]}<extra></extra>"
                 ),
-                customdata=_chart_df[["isk_label", "ship_name_bil"]].values,
+                customdata=_chart_df[["isk_label", "victim_ship_name_bil"]].values,
                 textposition="outside",
             )
             fig.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            _render_chart_with_copy(fig, _chart_df["ship_name_bil"].tolist(), "_show_kill_ships")
+            _render_chart_with_copy(fig, _chart_df["victim_ship_name_bil"].tolist(), "_show_kill_ships")
         else:
             st.info("暂无数据")
 
@@ -1255,11 +1255,11 @@ if entity_id is not None:
         st.subheader("🚢 击杀舰船（ISK）")
         if "top_kill_ships_by_isk" in dfs:
             df_isk = dfs["top_kill_ships_by_isk"].copy()
-            df_isk = _apply_zh_ship_names(df_isk, "ship_type_id", "ship_name")
+            df_isk = _apply_zh_ship_names(df_isk, "victim_ship_type_id", "victim_ship_name")
             df_isk["isk_label"] = df_isk["total_isk"].apply(_fmt)
             _chart_df_isk = df_isk.iloc[::-1]
             _chart_df_isk["display_isk"] = _chart_df_isk.apply(
-                lambda r: f"{r['ship_name']} ({r['isk_label']})", axis=1
+                lambda r: f"{r['victim_ship_name']} ({r['isk_label']})", axis=1
             )
             fig_isk = px.bar(
                 _chart_df_isk,
@@ -1278,11 +1278,11 @@ if entity_id is not None:
                     "击杀: %{customdata[0]}<br>"
                     "ISK: %{x}<extra></extra>"
                 ),
-                customdata=_chart_df_isk[["count", "ship_name_bil"]].values,
+                customdata=_chart_df_isk[["count", "victim_ship_name_bil"]].values,
                 textposition="outside",
             )
             fig_isk.update_layout(height=300, margin=dict(l=20, r=20, t=20, b=20))
-            _render_chart_with_copy(fig_isk, _chart_df_isk["ship_name_bil"].tolist(), "_show_kill_ships_isk")
+            _render_chart_with_copy(fig_isk, _chart_df_isk["victim_ship_name_bil"].tolist(), "_show_kill_ships_isk")
         else:
             st.info("暂无数据")
 

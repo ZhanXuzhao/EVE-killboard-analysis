@@ -279,26 +279,28 @@ def query_top_loss_ships(entity_id: int, date_from: str, date_to: str, limit: in
 
 
 def query_top_kill_ships(entity_id: int, date_from: str, date_to: str, limit: int = 10, entity_type: str = "corporation", sort_by: str = "count") -> list[dict]:
-    """击杀使用舰船排行 — 本方击杀时使用的船型。
+    """击杀舰船排行 — 本方击杀的受害者所开船型。
 
     Args:
-        sort_by: "count"（按击杀数降序）或 "isk"（按总 ISK 降序）
+        sort_by: "count"（按击毁数降序）或 "isk"（按总 ISK 降序）
     """
     order_clause = "total_isk DESC" if sort_by == "isk" else "count DESC"
     id_col = _id_col(entity_type)
     with get_db_read() as conn:
         rows = conn.execute(
             f"""
-            SELECT a.ship_name, a.ship_type_id,
-                   COUNT(DISTINCT a.killmail_id) AS count,
+            SELECT k.victim_ship_name, k.victim_ship_type_id,
+                   COUNT(DISTINCT k.killmail_id) AS count,
                    COALESCE(SUM(k.isk_destroyed), 0) AS total_isk
-            FROM attackers a
-            JOIN killmails k ON k.killmail_id = a.killmail_id
-            WHERE a.{id_col} = ?
+            FROM killmails k
+            WHERE EXISTS (
+                SELECT 1 FROM attackers a
+                WHERE a.killmail_id = k.killmail_id AND a.{id_col} = ?
+                  AND a.final_blow = 1
+            )
               AND k.killmail_time >= ? AND k.killmail_time < ?
-              AND a.final_blow = 1
               AND k.npc_kill = 0
-            GROUP BY a.ship_type_id
+            GROUP BY k.victim_ship_type_id
             ORDER BY {order_clause}
             LIMIT ?
             """,

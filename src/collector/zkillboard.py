@@ -30,7 +30,10 @@ _session = requests.Session()
 _session.headers.update({"User-Agent": USER_AGENT})
 
 # ESI API 端点
-_ESI_NAMES_URL = "https://esi.evetech.net/latest/universe/names/"
+_ESI_NAMES_URLS = [
+    "https://esi.evetech.net/latest/universe/names/",
+    "https://esi.evetech.net/v1/universe/names/",
+]
 
 
 def _request(path: str, params: Optional[dict] = None) -> Optional[dict | list]:
@@ -48,6 +51,35 @@ def _request(path: str, params: Optional[dict] = None) -> Optional[dict | list]:
 
 # ── ESI 名称解析 ────────────────────────────────────────
 
+def _post_names_request(id_batch: list[int]) -> list[dict]:
+    """尝试通过 ESI /universe/names/ 解析 ID 列表，必要时回退到 v1。"""
+    if not id_batch:
+        return []
+
+    last_error: Exception | None = None
+    for url in _ESI_NAMES_URLS:
+        try:
+            resp = _session.post(
+                url,
+                json=id_batch,
+                timeout=REQUEST_TIMEOUT,
+            )
+            if resp.status_code == 404:
+                raise RuntimeError(f"{url} not found")
+            resp.raise_for_status()
+            data = resp.json()
+            if isinstance(data, list):
+                return data
+            return []
+        except Exception as e:
+            last_error = e
+            logger.warning(f"ESI 名称解析失败 (url={url}, batch size={len(id_batch)}): {e}")
+
+    if last_error is not None:
+        logger.warning(f"ESI 名称解析全部失败 (batch size={len(id_batch)}): {last_error}")
+    return []
+
+
 def _batch_resolve_ids(id_batch: list[int]) -> dict[int, str]:
     """批量调用 ESI /universe/names/ 解析 ID→名称。
 
@@ -57,21 +89,8 @@ def _batch_resolve_ids(id_batch: list[int]) -> dict[int, str]:
     Returns:
         {id: name, ...}
     """
-    if not id_batch:
-        return {}
-    try:
-        resp = _session.post(
-            _ESI_NAMES_URL,
-            json=id_batch,
-            timeout=REQUEST_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        if isinstance(data, list):
-            return {item["id"]: item["name"] for item in data if "name" in item}
-    except Exception as e:
-        logger.warning(f"ESI 名称解析失败 (batch size={len(id_batch)}): {e}")
-    return {}
+    data = _post_names_request(id_batch)
+    return {item["id"]: item["name"] for item in data if "name" in item}
 
 
 def _batch_resolve_ids_with_category(id_batch: list[int]) -> dict[int, tuple[str, str]]:
@@ -84,24 +103,11 @@ def _batch_resolve_ids_with_category(id_batch: list[int]) -> dict[int, tuple[str
         {id: (name, category), ...}
         category 取值: character, corporation, alliance, solar_system, inventory_type, region, station, faction, constellation
     """
-    if not id_batch:
-        return {}
-    try:
-        resp = _session.post(
-            _ESI_NAMES_URL,
-            json=id_batch,
-            timeout=REQUEST_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        if isinstance(data, list):
-            return {
-                item["id"]: (item["name"], item.get("category", ""))
-                for item in data if "name" in item
-            }
-    except Exception as e:
-        logger.warning(f"ESI 名称解析失败 (batch size={len(id_batch)}): {e}")
-    return {}
+    data = _post_names_request(id_batch)
+    return {
+        item["id"]: (item["name"], item.get("category", ""))
+        for item in data if "name" in item
+    }
 
 
 # ── 星系→星域 缓存操作（直连 SQLite，无全局状态） ──────

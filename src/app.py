@@ -16,7 +16,7 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta, timezone
 
 from src.storage.database import init_db
-from src.collector.zkillboard import fetch_entity_kills, search_entities
+from src.collector.zkillboard import fetch_entity_kills, search_entities, _post_names_request
 from src.storage.repository import save_killmail, has_killmail, is_cache_valid, upsert_fetch_log
 from src.analysis.corp_analysis import analyze_entity_yesterday, _get_date_range
 
@@ -69,14 +69,7 @@ def _resolve_numeric_id(cid: int):
     """回调辅助：解析纯数字 ID。"""
     detected_type = "corporation"
     try:
-        import requests as _req
-        _resp = _req.post(
-            "https://esi.evetech.net/latest/universe/names/",
-            json=[cid],
-            headers={"User-Agent": "EVE-Killboard-Analysis/1.0"},
-            timeout=10,
-        )
-        _data = _resp.json()
+        _data = _post_names_request([cid])
         if isinstance(_data, list) and len(_data) > 0:
             item = _data[0]
             st.session_state.entity_name = item.get("name", str(cid))

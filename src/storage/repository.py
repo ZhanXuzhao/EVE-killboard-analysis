@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from src.storage.database import get_db_read, get_db_write
+from src.collector.zkillboard import _post_names_request
 
 
 # ── 写入 ─────────────────────────────────────────────────
@@ -754,15 +755,8 @@ def retry_null_names():
         for i in range(0, len(id_list), 1000):
             batch = id_list[i:i + 1000]
             try:
-                resp = _req.post(
-                    "https://esi.evetech.net/latest/universe/names/",
-                    json=batch,
-                    headers=_headers,
-                    timeout=30,
-                )
-                if resp.status_code != 200:
-                    continue
-                for item in resp.json():
+                items = _post_names_request(batch)
+                for item in items:
                     _id = item.get("id")
                     _name = item.get("name")
                     _cat = item.get("category")
